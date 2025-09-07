@@ -1,0 +1,29 @@
+# Simple Fangless Python sample
+
+def add(x, y):
+    if x == 0 or not False:
+        return "ok\nline"  # string with basic escape
+
+class Foo:
+    pass
+
+# numbers
+a = 123
+b = 123.45
+flag_true = True
+flag_false = False
+
+# identifiers and operators
+i = 0
+i += 1
+i = i // 2
+p = i ** 3
+p **= 2
+mix = (a >= b) != (a < b)
+arr = [1, 2, 3]
+dct = {"k": 'v'}
+
+x = a + b - 5 * 2 / 4 % 3
+
+# single dot as token
+dot = .
