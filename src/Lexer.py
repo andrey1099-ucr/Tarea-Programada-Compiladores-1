@@ -10,7 +10,7 @@ class Lexer:
         self.data = None
         self.debug = debug
         self.errors = errors
-        self. indent_stack = [0]
+        self.indent_stack = [0]
         self.pending_tokens = []
 
         # keyword map
@@ -175,6 +175,8 @@ class Lexer:
 
     def t_STRING(self, t):
         r"(\"([^\\\n]|\\.)*?\"|'([^\\\n]|\\.)*?')"
+        # Validate allowed escapes: \n, \t, \\, \", \'
+        self.validate_string_escapes(t)
         t.type = "STRING"
         return t
 
@@ -186,12 +188,12 @@ class Lexer:
     def t_NEWLINE(self, t):
         r"\n+"
         t.lexer.lineno += len(t.value)
-        
+
         newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos)
-        
+
         # Count spaces in next line:
-        remaining = t.lexer.lexdata[t.lexer.lexpos:]
-        match = re.match(r'[ ]*', remaining)
+        remaining = t.lexer.lexdata[t.lexer.lexpos :]
+        match = re.match(r"[ ]*", remaining)
         spaces = len(match.group(0)) if match else 0
         last_level = self.indent_stack[-1]
 
@@ -201,7 +203,7 @@ class Lexer:
             # Adds to pending stack
             indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos)
             self.pending_tokens.append(indent_token)
-        
+
         elif spaces < last_level:
             # Produces and returns multiple dedent tokens if needed
             while self.indent_stack and spaces < self.indent_stack[-1]:
@@ -212,13 +214,20 @@ class Lexer:
 
             # Indentation error
             if spaces > self.indent_stack[-1]:
-                #Error
-                print("Error de intentación (Pending)")
+                self.errors.append(
+                    Error(
+                        "BAD_INDENT: dedent does not match any previous indentation level",
+                        t.lexer.lineno,
+                        t.lexer.lexpos + spaces,
+                        "lexer",
+                        self.data,
+                    )
+                )
         else:
             pass
 
         return newline_token
-    
+
     # Aux function to manually create tokens
     def make_token(self, type, value, lineno, lexpos):
         t = lex.LexToken()
@@ -227,21 +236,60 @@ class Lexer:
         t.lineno = lineno
         t.lexpos = lexpos
         return t
-    
+
     def handle_remaining_dedents(self):
         # Dedents at eof:
         while len(self.indent_stack) > 1:
             self.indent_stack.pop()
             # Adds to pending stack
-            dedent_token = self.make_token("DEDENT", "", self.lex.lineno, self.lex.lexpos)
+            dedent_token = self.make_token(
+                "DEDENT", "", self.lex.lineno, self.lex.lexpos
+            )
             self.pending_tokens.append(dedent_token)
-        
+
         # Return all dedents:
         if self.pending_tokens:
             return self.pending_tokens.pop(0)
 
         return None
-    
+
+    # Report invalid escape sequences inside a string literal.
+    def validate_string_escapes(self, t):
+        allowed_escapes = {"n", "t", "\\", '"', "'"}
+        literal = t.value  # full literal including quotes
+        index = 1  # start after opening quote
+        closing_index = len(literal) - 1  # position of the closing quote
+
+        while index < closing_index:
+            if literal[index] == "\\":
+                # Backslash at the very end before the closing quote -> invalid
+                if index + 1 >= closing_index:
+                    self.errors.append(
+                        Error(
+                            "Invalid escape sequence: trailing backslash in string",
+                            t.lineno,
+                            t.lexpos + index,
+                            "lexer",
+                            self.data,
+                        )
+                    )
+                    break
+
+                next_char = literal[index + 1]
+                if next_char not in allowed_escapes:
+                    self.errors.append(
+                        Error(
+                            f"Invalid escape sequence \\{next_char}",
+                            t.lineno,
+                            t.lexpos + index,
+                            "lexer",
+                            self.data,
+                        )
+                    )
+                index += 2  # skip backslash + escaped char
+            else:
+                index += 1
+
     def t_error(self, t):
         self.errors.append(
             Error(
@@ -270,9 +318,8 @@ class Lexer:
         # Return pending token if needed
         if self.pending_tokens:
             return self.pending_tokens.pop(0)
-        
+
         t = self.lex.token()
         if not t:
             return self.handle_remaining_dedents()
-
         return t
