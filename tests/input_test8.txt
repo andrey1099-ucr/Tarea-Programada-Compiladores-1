@@ -1,0 +1,10 @@
+program teste8
+declare
+    integer peso, imc;
+    decimal peso;
+begin
+    read(peso);
+    read(altura);
+    imc := peso / (altura*altura);
+    write(imc);
+end
