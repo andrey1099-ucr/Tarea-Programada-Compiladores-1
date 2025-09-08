@@ -1,4 +1,5 @@
 import ply.lex as lex
+import re
 
 from src.utils import Error
 
@@ -9,6 +10,8 @@ class Lexer:
         self.data = None
         self.debug = debug
         self.errors = errors
+        self. indent_stack = [0]
+        self.pending_tokens = []
 
         # keyword map
         self.reserved_map = {
@@ -183,10 +186,62 @@ class Lexer:
     def t_NEWLINE(self, t):
         r"\n+"
         t.lexer.lineno += len(t.value)
-        t.type = "NEWLINE"
-        t.value = "\n"
-        return t
+        
+        newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos)
+        
+        # Count spaces in next line:
+        remaining = t.lexer.lexdata[t.lexer.lexpos:]
+        match = re.match(r'[ ]*', remaining)
+        spaces = len(match.group(0)) if match else 0
+        last_level = self.indent_stack[-1]
 
+        # Adds indentation level
+        if spaces > last_level:
+            self.indent_stack.append(spaces)
+            # Adds to pending stack
+            indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos)
+            self.pending_tokens.append(indent_token)
+        
+        elif spaces < last_level:
+            # Produces and returns multiple dedent tokens if needed
+            while self.indent_stack and spaces < self.indent_stack[-1]:
+                self.indent_stack.pop()
+                # Adds to pending stack
+                dedent_token = self.make_token("DEDENT", "", t.lexer.lineno, t.lexpos)
+                self.pending_tokens.append(dedent_token)
+
+            # Indentation error
+            if spaces > self.indent_stack[-1]:
+                #Error
+                print("Error de intentación (Pending)")
+        else:
+            pass
+
+        return newline_token
+    
+    # Aux function to manually create tokens
+    def make_token(self, type, value, lineno, lexpos):
+        t = lex.LexToken()
+        t.type = type
+        t.value = value
+        t.lineno = lineno
+        t.lexpos = lexpos
+        return t
+    
+    def handle_remaining_dedents(self):
+        # Dedents at eof:
+        while len(self.indent_stack) > 1:
+            self.indent_stack.pop()
+            # Adds to pending stack
+            dedent_token = self.make_token("DEDENT", "", self.lex.lineno, self.lex.lexpos)
+            self.pending_tokens.append(dedent_token)
+        
+        # Return all dedents:
+        if self.pending_tokens:
+            return self.pending_tokens.pop(0)
+
+        return None
+    
     def t_error(self, t):
         self.errors.append(
             Error(
@@ -212,4 +267,12 @@ class Lexer:
 
     # Return next token or None on EOF
     def token(self):
-        return self.lex.token()
+        # Return pending token if needed
+        if self.pending_tokens:
+            return self.pending_tokens.pop(0)
+        
+        t = self.lex.token()
+        if not t:
+            return self.handle_remaining_dedents()
+
+        return t
