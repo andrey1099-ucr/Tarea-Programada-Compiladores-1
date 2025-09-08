@@ -1,0 +1,12 @@
+# --- Invalid and valid escapes ---
+def f():
+    ok1 = "line1\nline2"     # valid: \n
+    ok2 = 'tab\tok'          # valid: \t
+    bad1 = "oops \q here"    # INVALID: \q
+    bad2 = 'hex \x nope'     # INVALID: \x (not allowed by spec)
+    x = 1 @ 2                # INVALID CHAR: '@' not defined in the lexer
+
+# --- Indent error: not matching existing indent ---
+if True:
+    a = 1
+   b = 2   # 3 spaces (mismatch): should trigger indentation error in your lexer
