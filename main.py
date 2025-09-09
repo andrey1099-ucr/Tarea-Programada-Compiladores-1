@@ -1,7 +1,7 @@
 from src.Lexer import Lexer
 from src.utils import Error
 
-FILE = "./tests/input_errors_demo.txt"
+FILE = "./tests/input_test11.txt"
 
 if __name__ == "__main__":
     # Create shared error list and lexer

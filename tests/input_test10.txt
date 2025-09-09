@@ -1,0 +1,16 @@
+
+# Layout bug demo: blank and comment-only lines inside a block
+
+if True:
+    a = 1
+
+    b = 2
+# comment at column 0 (current lexer will emit a DEDENT here)
+    c = 3
+d = 4
+
+may cuando se encuentra :
+
+must si despues del may hay un y 
+
+no

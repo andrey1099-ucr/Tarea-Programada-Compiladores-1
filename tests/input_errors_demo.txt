@@ -8,5 +8,5 @@ def f():
 
 # --- Indent error: not matching existing indent ---
 if True:
-    a = 1
-   b = 2   # 3 spaces (mismatch): should trigger indentation error in your lexer
+        a = 1
+       b = 2   # 3 spaces (mismatch): should trigger indentation error in your lexer

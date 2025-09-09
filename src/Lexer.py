@@ -12,6 +12,8 @@ class Lexer:
         self.errors = errors
         self.indent_stack = [0]
         self.pending_tokens = []
+        self.indent_size = 4
+        self.may_indent = False
 
         # keyword map
         self.reserved_map = {
@@ -31,6 +33,8 @@ class Lexer:
             "not": "NOT",
             "True": "TRUE",
             "False": "FALSE",
+            "in": "IN",
+            "range": "RANGE",
         }
 
     # Python's reserved words
@@ -51,6 +55,8 @@ class Lexer:
         "AND",
         "OR",
         "NOT",
+        "IN",
+        "RANGE",
     )
 
     # Token for variables,functions and class names
@@ -112,7 +118,7 @@ class Lexer:
     # Regex rules for tokens
 
     # Ignore spaces and tabs
-    t_ignore = " \t\f\r"
+    t_ignore = " \t"
 
     # Arithmetic
     t_POWER = r"\*\*"
@@ -188,53 +194,73 @@ class Lexer:
     def t_NEWLINE(self, t):
         r"\n+"
         t.lexer.lineno += len(t.value)
+        must_indent = False
 
-        newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos)
+        newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos, 0)
+        if self.may_indent == True:
+            must_indent = True
 
         # Count spaces in next line:
         remaining = t.lexer.lexdata[t.lexer.lexpos :]
         match = re.match(r"[ ]*", remaining)
         spaces = len(match.group(0)) if match else 0
         last_level = self.indent_stack[-1]
+        next_char = remaining[spaces : spaces + 1]
+
+        # Checks to ensure next line is not empty or a comment to proceed
+        if next_char in {"", "\n", "#"}:
+            return None
 
         # Adds indentation level
         if spaces > last_level:
-            self.indent_stack.append(spaces)
-            # Adds to pending stack
-            indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos)
-            self.pending_tokens.append(indent_token)
-
-        elif spaces < last_level:
-            # Produces and returns multiple dedent tokens if needed
-            while self.indent_stack and spaces < self.indent_stack[-1]:
-                self.indent_stack.pop()
+            if must_indent:
+                self.indent_stack.append(spaces)
                 # Adds to pending stack
-                dedent_token = self.make_token("DEDENT", "", t.lexer.lineno, t.lexpos)
-                self.pending_tokens.append(dedent_token)
-
+                indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos, 0)
+                self.pending_tokens.append(indent_token)
             # Indentation error
-            if spaces > self.indent_stack[-1]:
+            else:
                 self.errors.append(
                     Error(
-                        "BAD_INDENT: dedent does not match any previous indentation level",
+                        "BAD_INDENT: indent does not match any previous indentation level",
                         t.lexer.lineno,
                         t.lexer.lexpos + spaces,
                         "lexer",
                         self.data,
                     )
                 )
-        else:
-            pass
-
+        elif spaces < last_level:
+            # Produces and returns multiple dedent tokens if needed
+            while self.indent_stack and spaces < self.indent_stack[-1]:
+                self.indent_stack.pop()
+                # Adds to pending stack
+                dedent_token = self.make_token(
+                    "DEDENT", "", t.lexer.lineno, t.lexpos, 0
+                )
+                self.pending_tokens.append(dedent_token)
+            # Dedent error:
+            if spaces != self.indent_stack[-1]:
+                self.errors.append(
+                    Error(
+                        "BAD_DEDENT: dedent does not match any previous indentation level",
+                        t.lexer.lineno,
+                        t.lexer.lexpos + spaces,
+                        "lexer",
+                        self.data,
+                    )
+                )
+        # Reset may indent
+        self.may_indent = False
         return newline_token
 
     # Aux function to manually create tokens
-    def make_token(self, type, value, lineno, lexpos):
+    def make_token(self, type, value, lineno, lexpos, indent):
         t = lex.LexToken()
         t.type = type
         t.value = value
         t.lineno = lineno
         t.lexpos = lexpos
+        t.indent = indent
         return t
 
     def handle_remaining_dedents(self):
@@ -243,7 +269,7 @@ class Lexer:
             self.indent_stack.pop()
             # Adds to pending stack
             dedent_token = self.make_token(
-                "DEDENT", "", self.lex.lineno, self.lex.lexpos
+                "DEDENT", "", self.lex.lineno, self.lex.lexpos, 0
             )
             self.pending_tokens.append(dedent_token)
 
@@ -320,6 +346,12 @@ class Lexer:
             return self.pending_tokens.pop(0)
 
         t = self.lex.token()
-        if not t:
+        # indentation check
+        if t:
+            if t.type == "COLON":
+                self.may_indent = True
+            else:
+                self.may_indent = False
+        else:
             return self.handle_remaining_dedents()
         return t
