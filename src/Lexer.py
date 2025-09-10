@@ -14,6 +14,7 @@ class Lexer:
         self.pending_tokens = []
         self.indent_size = 4
         self.may_indent = False
+        self.bracket_level = 0
 
         # keyword map
         self.reserved_map = {
@@ -195,6 +196,9 @@ class Lexer:
         r"\n+"
         t.lexer.lineno += len(t.value)
         must_indent = False
+        
+        if self.bracket_level > 0:
+            return None
 
         newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos, 0)
         if self.may_indent == True:
@@ -348,7 +352,13 @@ class Lexer:
         t = self.lex.token()
         # indentation check
         if t:
-            if t.type == "COLON":
+            if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
+                self.bracket_level += 1
+            elif t.type in {"RPAREN", "RBRACKET", "RBRACE"}:
+                if self.bracket_level > 0:
+                    self.bracket_level -= 1
+                    
+            if t.type == "COLON" and self.bracket_level == 0:
                 self.may_indent = True
             else:
                 self.may_indent = False
