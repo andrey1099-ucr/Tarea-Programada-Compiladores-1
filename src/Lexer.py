@@ -200,7 +200,7 @@ class Lexer:
         if self.bracket_level > 0:
             return None
 
-        newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos, 0)
+        newline_token = self.make_token("NEWLINE", "\n", t.lexer.lineno, t.lexpos)
         if self.may_indent == True:
             must_indent = True
 
@@ -220,7 +220,7 @@ class Lexer:
             if must_indent:
                 self.indent_stack.append(spaces)
                 # Adds to pending stack
-                indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos, 0)
+                indent_token = self.make_token("INDENT", "", t.lexer.lineno, t.lexpos)
                 self.pending_tokens.append(indent_token)
             # Indentation error
             else:
@@ -239,8 +239,7 @@ class Lexer:
                 self.indent_stack.pop()
                 # Adds to pending stack
                 dedent_token = self.make_token(
-                    "DEDENT", "", t.lexer.lineno, t.lexpos, 0
-                )
+                    "DEDENT", "", t.lexer.lineno, t.lexpos)
                 self.pending_tokens.append(dedent_token)
             # Dedent error:
             if spaces != self.indent_stack[-1]:
@@ -258,13 +257,12 @@ class Lexer:
         return newline_token
 
     # Aux function to manually create tokens
-    def make_token(self, type, value, lineno, lexpos, indent):
+    def make_token(self, type, value, lineno, lexpos):
         t = lex.LexToken()
         t.type = type
         t.value = value
         t.lineno = lineno
         t.lexpos = lexpos
-        t.indent = indent
         return t
 
     def handle_remaining_dedents(self):
@@ -273,8 +271,7 @@ class Lexer:
             self.indent_stack.pop()
             # Adds to pending stack
             dedent_token = self.make_token(
-                "DEDENT", "", self.lex.lineno, self.lex.lexpos, 0
-            )
+                "DEDENT", "", self.lex.lineno, self.lex.lexpos)
             self.pending_tokens.append(dedent_token)
 
         # Return all dedents:
