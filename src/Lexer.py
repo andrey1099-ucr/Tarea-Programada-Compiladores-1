@@ -102,7 +102,7 @@ class Lexer:
         "COLON",
         "COMMA",
         "DOT",
-        "SEMICOLON",
+        "SEMI",
     )
 
     indentation = ("INDENT", "DEDENT", "NEWLINE")
@@ -159,7 +159,7 @@ class Lexer:
     t_COLON = r":"
     t_COMMA = r","
     t_DOT = r"\."
-    t_SEMICOLON = r";"
+    t_SEMI = r";"
 
     # Rules with some action
 
