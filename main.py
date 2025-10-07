@@ -1,6 +1,8 @@
+import os
 from src.Parser import Parser
+from pprint import pformat
 
-FILE = "./tests/input_test11.txt"
+FILE = "./tests/test_assignments_1.py"
 
 if __name__ == "__main__":
     # Build parser (and its lexer)
@@ -14,7 +16,7 @@ if __name__ == "__main__":
     # Parse to AST
     ast = parser.parse(data)
 
-    # Output
+    # Output to console
     print("=== AST ===")
     print(ast)
 
@@ -22,3 +24,11 @@ if __name__ == "__main__":
     print(len(parser.errors))
     for e in parser.errors:
         print(e)
+
+    # Save AST to a .txt file next to the input
+    out_path = os.path.splitext(FILE)[0] + ".ast.txt"
+    with open(out_path, "w", encoding="utf-8") as outf:
+        outf.write(pformat(ast, width=120))
+        outf.write("\n")
+
+    print(f"\nAST saved to: {out_path}")

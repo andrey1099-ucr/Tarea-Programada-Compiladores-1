@@ -342,25 +342,33 @@ class Lexer:
         self.data = data
         self.lex.input(data)
 
+
     # Return next token or None on EOF
     def token(self):
-        # Return pending token if needed
+        # 1) If there are pending synthetic tokens (INDENT/DEDENT), serve them first
         if self.pending_tokens:
             return self.pending_tokens.pop(0)
 
+        # 2) Ask PLY for the next raw token
         t = self.lex.token()
-        # indentation check
-        if t:
-            if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
-                self.bracket_level += 1
-            elif t.type in {"RPAREN", "RBRACKET", "RBRACE"}:
-                if self.bracket_level > 0:
-                    self.bracket_level -= 1
-
-            if t.type == "COLON" and self.bracket_level == 0:
-                self.may_indent = True
-            else:
-                self.may_indent = False
-        else:
+        if not t:
+            # Emit any remaining DEDENTs at EOF
             return self.handle_remaining_dedents()
+
+        # 3) Treat ';' as a soft NEWLINE at top level (separator only; no indent/dedent)
+        if t.type == "SEMI" and self.bracket_level == 0:
+            # Indentation must not be allowed after ';'
+            self.may_indent = False
+            # Return a synthetic NEWLINE token (doesn't trigger t_NEWLINE logic)
+            return self.make_token("NEWLINE", "\n", t.lineno, t.lexpos)
+
+        # 4) Track bracket nesting level
+        if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
+            self.bracket_level += 1
+        elif t.type in {"RPAREN", "RBRACKET", "RBRACE"} and self.bracket_level > 0:
+            self.bracket_level -= 1
+
+        # 5) Only a top-level ':' may allow an indented block on the next physical NEWLINE
+        self.may_indent = t.type == "COLON" and self.bracket_level == 0
+
         return t
