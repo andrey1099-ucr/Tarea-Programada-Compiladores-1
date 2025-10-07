@@ -102,7 +102,7 @@ class Lexer:
         "COLON",
         "COMMA",
         "DOT",
-        "SEMICOLON",
+        "SEMI",
     )
 
     indentation = ("INDENT", "DEDENT", "NEWLINE")
@@ -159,7 +159,7 @@ class Lexer:
     t_COLON = r":"
     t_COMMA = r","
     t_DOT = r"\."
-    t_SEMICOLON = r";"
+    t_SEMI = r";"
 
     # Rules with some action
 
@@ -344,23 +344,53 @@ class Lexer:
 
     # Return next token or None on EOF
     def token(self):
-        # Return pending token if needed
+        # 1) If there are pending synthetic tokens (INDENT/DEDENT), serve them first
         if self.pending_tokens:
             return self.pending_tokens.pop(0)
 
+        # 2) Ask PLY for the next raw token
         t = self.lex.token()
-        # indentation check
-        if t:
-            if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
-                self.bracket_level += 1
-            elif t.type in {"RPAREN", "RBRACKET", "RBRACE"}:
-                if self.bracket_level > 0:
-                    self.bracket_level -= 1
-
-            if t.type == "COLON" and self.bracket_level == 0:
-                self.may_indent = True
-            else:
-                self.may_indent = False
-        else:
+        if not t:
+            # Emit any remaining DEDENTs at EOF
             return self.handle_remaining_dedents()
+
+        # 3) Treat ';' as a soft NEWLINE at top level (separator only; no indent/dedent)
+        if t.type == "SEMI" and self.bracket_level == 0:
+            # Indentation must not be allowed after ';'
+            self.may_indent = False
+            # Return a synthetic NEWLINE token (doesn't trigger t_NEWLINE logic)
+            return self.make_token("NEWLINE", "\n", t.lineno, t.lexpos)
+
+        # 4) Track bracket nesting level
+        if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
+            self.bracket_level += 1
+        elif t.type in {"RPAREN", "RBRACKET", "RBRACE"} and self.bracket_level > 0:
+            self.bracket_level -= 1
+
+        # 5) Only a top-level ':' may allow an indented block on the next physical NEWLINE
+        self.may_indent = t.type == "COLON" and self.bracket_level == 0
+
         return t
+
+
+    # --- Expose line/position to PLY when using the wrapper as 'lexer' ---
+
+    @property
+    def lineno(self):
+        """Expose current line number to the parser when tracking=True."""
+        return getattr(self.lex, "lineno", 0)
+
+    @lineno.setter
+    def lineno(self, value):
+        if hasattr(self.lex, "lineno"):
+            self.lex.lineno = value
+
+    @property
+    def lexpos(self):
+        """Expose current absolute position to the parser (optional)."""
+        return getattr(self.lex, "lexpos", 0)
+
+    @lexpos.setter
+    def lexpos(self, value):
+        if hasattr(self.lex, "lexpos"):
+            self.lex.lexpos = value

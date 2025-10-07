@@ -3,44 +3,171 @@ import ply.yacc as yacc
 from src.Lexer import Lexer
 from src.utils import Error
 
+
 class Parser:
-    # Reuse tokens defined by the lexer
+    # Expose token list from the lexer
     tokens = Lexer.tokens
 
     def __init__(self, debug=False):
         self.errors = []
         self.data = None
         self.debug = debug
-        # Dedicated lexer instance (shares the same error list)
         self.lexer = Lexer(self.errors, debug=self.debug)
-        self.parser = None
+        self._parser = None
 
     def build(self, build_lexer=True):
         if build_lexer:
             self.lexer.build()
-        # Explicit start symbol
-        self.parser = yacc.yacc(module=self, start="module", debug=self.debug)
+        self._parser = yacc.yacc(module=self, start="program", debug=self.debug)
 
     def parse(self, data):
         self.data = data
-        # Feed the same input to the underlying PLY lexer object
-        self.lexer.input(data)
-        # Parse using the same lexer
-        return self.parser.parse(input=data, lexer=self.lexer.lex, tracking=True)
+        self.lexer.input(data)  # feed text to PLY's internal lexer
+        return self._parser.parse(input=data, lexer=self.lexer, tracking=True)
 
     # Error handling
-    def p_error(self, p):
-        if not p:
-            self.errors.append(
-                Error("Unexpected end of input", 0, 0, "parser", self.data)
-            )
+    def p_error(self, token):
+        if token is None:
+            self.errors.append(Error("Unexpected end of input", 0, 0, "parser", self.data))
         else:
             self.errors.append(
-                Error(
-                    f"Syntax error on '{p.value}'",
-                    p.lineno,
-                    p.lexpos,
-                    "parser",
-                    self.data,
-                )
+                Error(f"Syntax error on '{token.value}'", token.lineno, token.lexpos, "parser", self.data)
             )
+
+    # Grammar
+
+    # program
+    def p_program(self, p):
+        """program : stmt_lines_opt"""
+        p[0] = ("program", p[1])
+
+    def p_stmt_lines_opt(self, p):
+        """stmt_lines_opt : stmt_lines
+        | empty"""
+        p[0] = p[1]  # either a list from stmt_lines or []
+
+    def p_stmt_lines(self, p):
+        """stmt_lines : stmt_lines stmt_line
+        | stmt_line"""
+        if len(p) == 2:
+            p[0] = p[1]  # stmt_line always returns a LIST
+        else:
+            p[1].extend(p[2])
+            p[0] = p[1]
+
+    # One simple statement per logical line (NEWLINE). Lexer already splits on ';'
+    def p_stmt_line(self, p):
+        """stmt_line : simple_stmt NEWLINE"""
+        p[0] = [p[1]]
+
+    # EOF tolerance: allow the last line without a trailing NEWLINE
+    def p_stmt_line_last(self, p):
+        """stmt_line : simple_stmt"""
+        p[0] = [p[1]]
+
+    # Empty physical line: just a NEWLINE no statements for this line
+    def p_stmt_line_empty(self, p):
+        """stmt_line : NEWLINE"""
+        p[0] = []
+
+    # Simple statements
+    
+    def p_simple_stmt(self, p):
+        """simple_stmt : assignment
+        | return_stmt
+        | pass_stmt
+        | break_stmt
+        | continue_stmt
+        | expr_stmt"""
+        p[0] = p[1]
+
+    # assignment: ID op expression   (single-target for now)
+    def p_assignment(self, p):
+        """assignment : ID assign_op expression"""
+        p[0] = ("assign", p[2], ("name", p[1]), p[3])
+
+    def p_assign_op(self, p):
+        """assign_op : EQUAL
+        | PLUS_EQUAL
+        | MINUS_EQUAL
+        | TIMES_EQUAL
+        | DIVIDE_EQUAL
+        | MODULE_EQUAL
+        | FLOORDIV_EQUAL
+        | POWER_EQUAL"""
+        p[0] = "=" if p.slice[1].type == "EQUAL" else p.slice[1].type
+
+    # return
+    def p_return_stmt(self, p):
+        """return_stmt : RETURN
+        | RETURN expression"""
+        p[0] = ("return", None) if len(p) == 2 else ("return", p[2])
+
+    # pass
+    def p_pass_stmt(self, p):
+        """pass_stmt : PASS"""
+        p[0] = ("pass",)
+
+    # break / continue
+    def p_break_stmt(self, p):
+        """break_stmt : BREAK"""
+        p[0] = ("break",)
+
+    def p_continue_stmt(self, p):
+        """continue_stmt : CONTINUE"""
+        p[0] = ("continue",)
+
+    # expression used as a statement (enables bare function calls as statements)
+    def p_expr_stmt(self, p):
+        """expr_stmt : expression"""
+        p[0] = p[1]
+
+    # Expressions (atoms + function calls + grouping)
+
+    # Function call: ID '(' [args] ')'
+    def p_expression_call(self, p):
+        """expression : ID LPAREN opt_arglist RPAREN"""
+        p[0] = ("call", ("name", p[1]), p[3])
+
+    def p_opt_arglist(self, p):
+        """opt_arglist : arglist
+        | empty"""
+        p[0] = p[1]  # empty returns []
+
+    def p_arglist(self, p):
+        """arglist : expression
+        | arglist COMMA expression"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    # Grouping
+    def p_expression_group(self, p):
+        """expression : LPAREN expression RPAREN"""
+        p[0] = p[2]
+
+    # Atoms
+    def p_expression_name(self, p):
+        """expression : ID"""
+        p[0] = ("name", p[1])
+
+    def p_expression_number(self, p):
+        """expression : INTEGER
+        | FLOAT"""
+        p[0] = ("num", p[1])
+
+    def p_expression_string(self, p):
+        """expression : STRING"""
+        p[0] = ("str", p[1])
+
+    def p_expression_bool(self, p):
+        """expression : TRUE
+        | FALSE"""
+        p[0] = ("bool", True if p.slice[1].type == "TRUE" else False)
+
+    # Utility
+    def p_empty(self, p):
+        """empty :"""
+        p[0] = []
