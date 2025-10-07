@@ -342,7 +342,6 @@ class Lexer:
         self.data = data
         self.lex.input(data)
 
-
     # Return next token or None on EOF
     def token(self):
         # 1) If there are pending synthetic tokens (INDENT/DEDENT), serve them first
@@ -372,3 +371,26 @@ class Lexer:
         self.may_indent = t.type == "COLON" and self.bracket_level == 0
 
         return t
+
+
+    # --- Expose line/position to PLY when using the wrapper as 'lexer' ---
+
+    @property
+    def lineno(self):
+        """Expose current line number to the parser when tracking=True."""
+        return getattr(self.lex, "lineno", 0)
+
+    @lineno.setter
+    def lineno(self, value):
+        if hasattr(self.lex, "lineno"):
+            self.lex.lineno = value
+
+    @property
+    def lexpos(self):
+        """Expose current absolute position to the parser (optional)."""
+        return getattr(self.lex, "lexpos", 0)
+
+    @lexpos.setter
+    def lexpos(self, value):
+        if hasattr(self.lex, "lexpos"):
+            self.lex.lexpos = value

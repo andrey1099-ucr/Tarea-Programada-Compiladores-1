@@ -3,8 +3,9 @@ import ply.yacc as yacc
 from src.Lexer import Lexer
 from src.utils import Error
 
+
 class Parser:
-    # Expose the token list from the lexer
+    # Expose token list from the lexer
     tokens = Lexer.tokens
 
     def __init__(self, debug=False):
@@ -33,9 +34,9 @@ class Parser:
                 Error(f"Syntax error on '{token.value}'", token.lineno, token.lexpos, "parser", self.data)
             )
 
-        # Grammar
+    # Grammar
 
-    # zero-or-more lines of assignments
+    # program
     def p_program(self, p):
         """program : stmt_lines_opt"""
         p[0] = ("program", p[1])
@@ -43,39 +44,47 @@ class Parser:
     def p_stmt_lines_opt(self, p):
         """stmt_lines_opt : stmt_lines
         | empty"""
-        p[0] = p[1]
+        p[0] = p[1]  # either a list from stmt_lines or []
 
     def p_stmt_lines(self, p):
         """stmt_lines : stmt_lines stmt_line
         | stmt_line"""
         if len(p) == 2:
-            p[0] = p[1]  # stmt_line always returns a list
+            p[0] = p[1]  # stmt_line always returns a LIST
         else:
             p[1].extend(p[2])
             p[0] = p[1]
 
-    # One statement per logical line (NEWLINE). Lexer turns ';' into NEWLINE.
+    # One simple statement per logical line (NEWLINE). Lexer already splits on ';'
     def p_stmt_line(self, p):
-        """stmt_line : assignment NEWLINE"""
+        """stmt_line : simple_stmt NEWLINE"""
         p[0] = [p[1]]
 
-    # EOF tolerance: last line without trailing NEWLINE
-    def p_stmt_line_last_single(self, p):
-        """stmt_line : assignment"""
+    # EOF tolerance: allow the last line without a trailing NEWLINE
+    def p_stmt_line_last(self, p):
+        """stmt_line : simple_stmt"""
         p[0] = [p[1]]
 
-    # Empty line (just a NEWLINE) -> no statements for this line
+    # Empty physical line: just a NEWLINE no statements for this line
     def p_stmt_line_empty(self, p):
         """stmt_line : NEWLINE"""
         p[0] = []
 
-    # Assignment
+    # Simple statements
+    
+    def p_simple_stmt(self, p):
+        """simple_stmt : assignment
+        | return_stmt
+        | pass_stmt
+        | break_stmt
+        | continue_stmt
+        | expr_stmt"""
+        p[0] = p[1]
+
+    # assignment: ID op expression   (single-target for now)
     def p_assignment(self, p):
         """assignment : ID assign_op expression"""
-        target = ("name", p[1])
-        op = p[2]
-        rhs = p[3]
-        p[0] = ("assign", op, [target], rhs)
+        p[0] = ("assign", p[2], ("name", p[1]), p[3])
 
     def p_assign_op(self, p):
         """assign_op : EQUAL
@@ -88,11 +97,58 @@ class Parser:
         | POWER_EQUAL"""
         p[0] = "=" if p.slice[1].type == "EQUAL" else p.slice[1].type
 
-    # Expressions
+    # return
+    def p_return_stmt(self, p):
+        """return_stmt : RETURN
+        | RETURN expression"""
+        p[0] = ("return", None) if len(p) == 2 else ("return", p[2])
+
+    # pass
+    def p_pass_stmt(self, p):
+        """pass_stmt : PASS"""
+        p[0] = ("pass",)
+
+    # break / continue
+    def p_break_stmt(self, p):
+        """break_stmt : BREAK"""
+        p[0] = ("break",)
+
+    def p_continue_stmt(self, p):
+        """continue_stmt : CONTINUE"""
+        p[0] = ("continue",)
+
+    # expression used as a statement (enables bare function calls as statements)
+    def p_expr_stmt(self, p):
+        """expr_stmt : expression"""
+        p[0] = p[1]
+
+    # Expressions (atoms + function calls + grouping)
+
+    # Function call: ID '(' [args] ')'
+    def p_expression_call(self, p):
+        """expression : ID LPAREN opt_arglist RPAREN"""
+        p[0] = ("call", ("name", p[1]), p[3])
+
+    def p_opt_arglist(self, p):
+        """opt_arglist : arglist
+        | empty"""
+        p[0] = p[1]  # empty returns []
+
+    def p_arglist(self, p):
+        """arglist : expression
+        | arglist COMMA expression"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    # Grouping
     def p_expression_group(self, p):
         """expression : LPAREN expression RPAREN"""
         p[0] = p[2]
 
+    # Atoms
     def p_expression_name(self, p):
         """expression : ID"""
         p[0] = ("name", p[1])
@@ -111,6 +167,7 @@ class Parser:
         | FALSE"""
         p[0] = ("bool", True if p.slice[1].type == "TRUE" else False)
 
+    # Utility
     def p_empty(self, p):
         """empty :"""
         p[0] = []
