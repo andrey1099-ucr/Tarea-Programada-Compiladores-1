@@ -102,6 +102,7 @@ class Lexer:
         "COLON",
         "COMMA",
         "DOT",
+        "SEMICOLON",
     )
 
     indentation = ("INDENT", "DEDENT", "NEWLINE")
@@ -158,6 +159,7 @@ class Lexer:
     t_COLON = r":"
     t_COMMA = r","
     t_DOT = r"\."
+    t_SEMICOLON = r";"
 
     # Rules with some action
 
@@ -196,7 +198,7 @@ class Lexer:
         r"\n+"
         t.lexer.lineno += len(t.value)
         must_indent = False
-        
+
         if self.bracket_level > 0:
             return None
 
@@ -354,7 +356,7 @@ class Lexer:
             elif t.type in {"RPAREN", "RBRACKET", "RBRACE"}:
                 if self.bracket_level > 0:
                     self.bracket_level -= 1
-                    
+
             if t.type == "COLON" and self.bracket_level == 0:
                 self.may_indent = True
             else:
