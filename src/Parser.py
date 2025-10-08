@@ -42,7 +42,7 @@ class Parser:
                 )
             )
 
-    # ---------- Program / logical lines ----------
+    # Program / logical lines
     def p_program(self, p):
         """program : stmt_lines_opt"""
         p[0] = ("program", p[1])
@@ -242,11 +242,11 @@ class Parser:
 
     def p_expression_not(self, p):
         """expression_not : NOT expression_not
-        | primary"""
+                        | arith_add"""
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("not", p[2])
+            p[0] = ('not', p[2])
 
     # Primary: calls, grouping, atoms
     def p_primary_call(self, p):
@@ -294,6 +294,64 @@ class Parser:
         """atom : TRUE
         | FALSE"""
         p[0] = ("bool", True if p.slice[1].type == "TRUE" else False)
+        
+
+    # Arithmetic ( ** > unary +/- > *,/,//,% > +,- ) 
+
+    # add/sub (left-assoc)
+    def p_arith_add(self, p):
+        """arith_add : arith_add ADD arith_mul
+        | arith_add MINUS arith_mul
+        | arith_mul"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            op = "+" if p.slice[2].type == "ADD" else "-"
+            p[0] = (op, p[1], p[3])
+
+
+    # mul/div/floordiv/mod (left-assoc)
+    def p_arith_mul(self, p):
+        """arith_mul : arith_mul TIMES arith_unary
+        | arith_mul DIVIDE arith_unary
+        | arith_mul FLOORDIV arith_unary
+        | arith_mul MODULE arith_unary
+        | arith_unary"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            t = p.slice[2].type
+            op = {"TIMES": "*", "DIVIDE": "/", "FLOORDIV": "//", "MODULE": "%"}[t]
+            p[0] = (op, p[1], p[3])
+
+
+    # power (right-assoc) left side is a primary (no unary),
+    # right side can include unary (like Python)
+    def p_arith_pow(self, p):
+        """arith_pow : arith_primary POWER arith_pow
+        | arith_primary"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            p[0] = ("**", p[1], p[3])
+
+    # unary +/- bind tighter than mul/div but looser than power
+    def p_arith_unary(self, p):
+        """arith_unary : MINUS arith_unary
+        | ADD arith_unary
+        | arith_pow"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            if p.slice[1].type == "MINUS":
+                p[0] = ("neg", p[2])  # unary minus
+            else:
+                p[0] = ("pos", p[2])  # unary plus
+
+    # bridge to existing 'primary' (calls, grouping, atoms)
+    def p_arith_primary(self, p):
+        """arith_primary : primary"""
+        p[0] = p[1]
 
     # Utility
     def p_empty(self, p):
