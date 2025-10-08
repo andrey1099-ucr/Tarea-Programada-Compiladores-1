@@ -248,6 +248,72 @@ class Parser:
         """primary : atom"""
         p[0] = p[1]
 
+    # list/tuple/dict literals
+
+    def p_primary_list(self, p):
+        """primary : LBRACKET list_elems_opt RBRACKET"""
+        p[0] = ("list", p[2])
+
+    def p_list_elems_opt(self, p):
+        """list_elems_opt : expr_list_opt_trailing
+        | empty"""
+        p[0] = p[1]  # [] if empty
+
+    def p_primary_tuple(self, p):
+        """primary : LPAREN tuple_elems RPAREN"""
+        p[0] = ("tuple", p[2])
+
+    def p_tuple_elems(self, p):
+        """tuple_elems : expression COMMA tuple_elems_rest_opt"""
+        if p[3] == []:
+            p[0] = [p[1]]
+        else:
+            p[0] = [p[1]] + p[3]
+
+    def p_tuple_elems_rest_opt(self, p):
+        """tuple_elems_rest_opt : expr_list_opt_trailing
+        | empty"""
+        p[0] = p[1]
+
+    def p_primary_dict(self, p):
+        """primary : LBRACE dict_items_opt RBRACE"""
+        p[0] = ("dict", p[2])
+
+    def p_dict_items_opt(self, p):
+        """dict_items_opt : dict_items
+        | empty"""
+        p[0] = p[1]  # [] if empty
+
+    def p_dict_items(self, p):
+        """dict_items : dict_items COMMA dict_item
+        | dict_items COMMA
+        | dict_item"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            if len(p) == 3:
+                p[0] = p[1]
+            else:
+                p[1].append(p[3])
+                p[0] = p[1]
+
+    def p_dict_item(self, p):
+        """dict_item : expression COLON expression"""
+        p[0] = (p[1], p[3])
+
+    def p_expr_list_opt_trailing(self, p):
+        """expr_list_opt_trailing : expression
+        | expr_list_opt_trailing COMMA expression
+        | expr_list_opt_trailing COMMA"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            if len(p) == 3:
+                p[0] = p[1]
+            else:
+                p[1].append(p[3])
+                p[0] = p[1]
+
     # Call arglist (positional only)
     def p_opt_arglist(self, p):
         """opt_arglist : arglist
