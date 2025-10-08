@@ -201,23 +201,9 @@ class Parser:
         # ('while', condition, body)
         p[0] = ("while", p[2], p[6])
 
-    # Conditions / relations
-    def p_condition_binary(self, p):
-        """condition : expression relation_op expression"""
-        p[0] = ("cmp", p[2], p[1], p[3])
-
-    def p_condition_expr(self, p):
+    def p_condition(self, p):
         """condition : expression"""
         p[0] = p[1]
-
-    def p_relation_op(self, p):
-        """relation_op : EQUAL_EQUAL
-        | NOT_EQUAL
-        | LESS
-        | GREATER
-        | LESS_EQUAL
-        | GREATER_EQUAL"""
-        p[0] = p.slice[1].type
 
     # Expressions (OR > AND > NOT > primary)
     def p_expression(self, p):
@@ -240,13 +226,14 @@ class Parser:
         else:
             p[0] = ("and", p[1], p[3])
 
+    # logical NOT sits above comparisons
     def p_expression_not(self, p):
         """expression_not : NOT expression_not
-                        | arith_add"""
+        | rel_expr"""
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ('not', p[2])
+            p[0] = ("not", p[2])
 
     # Primary: calls, grouping, atoms
     def p_primary_call(self, p):
@@ -294,9 +281,8 @@ class Parser:
         """atom : TRUE
         | FALSE"""
         p[0] = ("bool", True if p.slice[1].type == "TRUE" else False)
-        
 
-    # Arithmetic ( ** > unary +/- > *,/,//,% > +,- ) 
+    # Arithmetic ( ** > unary +/- > *,/,//,% > +,- )
 
     # add/sub (left-assoc)
     def p_arith_add(self, p):
@@ -308,7 +294,6 @@ class Parser:
         else:
             op = "+" if p.slice[2].type == "ADD" else "-"
             p[0] = (op, p[1], p[3])
-
 
     # mul/div/floordiv/mod (left-assoc)
     def p_arith_mul(self, p):
@@ -323,7 +308,6 @@ class Parser:
             t = p.slice[2].type
             op = {"TIMES": "*", "DIVIDE": "/", "FLOORDIV": "//", "MODULE": "%"}[t]
             p[0] = (op, p[1], p[3])
-
 
     # power (right-assoc) left side is a primary (no unary),
     # right side can include unary (like Python)
@@ -352,6 +336,28 @@ class Parser:
     def p_arith_primary(self, p):
         """arith_primary : primary"""
         p[0] = p[1]
+
+    # Binary comparisons
+    def p_rel_expr(self, p):
+        """rel_expr : arith_add
+        | arith_add EQUAL_EQUAL arith_add
+        | arith_add NOT_EQUAL arith_add
+        | arith_add LESS arith_add
+        | arith_add GREATER arith_add
+        | arith_add LESS_EQUAL arith_add
+        | arith_add GREATER_EQUAL arith_add"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            op = {
+                "EQUAL_EQUAL": "==",
+                "NOT_EQUAL": "!=",
+                "LESS": "<",
+                "GREATER": ">",
+                "LESS_EQUAL": "<=",
+                "GREATER_EQUAL": ">=",
+            }[p.slice[2].type]
+            p[0] = ("cmp", op, p[1], p[3])
 
     # Utility
     def p_empty(self, p):
