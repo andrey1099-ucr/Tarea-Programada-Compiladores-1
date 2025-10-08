@@ -126,7 +126,7 @@ class Parser:
 
     # Function call: ID '(' [args] ')'
     def p_function_call(self, p):
-        """function_call : ID LPAREN opt_arglist RPAREN"""
+        """expression : ID LPAREN opt_arglist RPAREN"""
         p[0] = ("call", ("name", p[1]), p[3])
 
     def p_opt_arglist(self, p):
@@ -209,12 +209,6 @@ class Parser:
         GREATER_EQUAL"""
         p[0] = p[1]
 
-    # Negate expression
-    def p_not_expression(self, p):
-        """expression : NOT expression"""
-        p[0] = ("not", p[2])
-
-
     # Grouping: Lowest to Highest priority
 
     def p_expression(self, p):
@@ -240,7 +234,7 @@ class Parser:
         else:
             p[0] = ("logical_op", "AND", p[1], p[3])
 
-    def p_expression_and(self, p):
+    def p_expression_not(self, p):
         """expression_not : NOT expression_not
         | expression_group
         | atom"""
