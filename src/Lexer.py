@@ -35,7 +35,6 @@ class Lexer:
             "True": "TRUE",
             "False": "FALSE",
             "in": "IN",
-            "range": "RANGE",
         }
 
     # Python's reserved words
@@ -57,7 +56,6 @@ class Lexer:
         "OR",
         "NOT",
         "IN",
-        "RANGE",
     )
 
     # Token for variables,functions and class names
@@ -344,36 +342,36 @@ class Lexer:
 
     # Return next token or None on EOF
     def token(self):
-        # 1) If there are pending synthetic tokens (INDENT/DEDENT), serve them first
+        # If there are pending synthetic tokens (INDENT/DEDENT), serve them first
         if self.pending_tokens:
             return self.pending_tokens.pop(0)
 
-        # 2) Ask PLY for the next raw token
+        # Ask PLY for the next raw token
         t = self.lex.token()
         if not t:
             # Emit any remaining DEDENTs at EOF
             return self.handle_remaining_dedents()
 
-        # 3) Treat ';' as a soft NEWLINE at top level (separator only; no indent/dedent)
+        # Treat ';' as a soft NEWLINE at top level (separator only; no indent/dedent)
         if t.type == "SEMI" and self.bracket_level == 0:
             # Indentation must not be allowed after ';'
             self.may_indent = False
             # Return a synthetic NEWLINE token (doesn't trigger t_NEWLINE logic)
             return self.make_token("NEWLINE", "\n", t.lineno, t.lexpos)
 
-        # 4) Track bracket nesting level
+        # Track bracket nesting level
         if t.type in {"LPAREN", "LBRACKET", "LBRACE"}:
             self.bracket_level += 1
         elif t.type in {"RPAREN", "RBRACKET", "RBRACE"} and self.bracket_level > 0:
             self.bracket_level -= 1
 
-        # 5) Only a top-level ':' may allow an indented block on the next physical NEWLINE
+        # Only a top-level ':' may allow an indented block on the next physical NEWLINE
         self.may_indent = t.type == "COLON" and self.bracket_level == 0
 
         return t
 
 
-    # --- Expose line/position to PLY when using the wrapper as 'lexer' ---
+    # Expose line/position to PLY when using the wrapper as 'lexer'
 
     @property
     def lineno(self):
