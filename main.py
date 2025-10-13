@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # Save AST to a .txt file next to the input
     out_path = os.path.splitext(FILE)[0] + ".ast.txt"
     with open(out_path, "w", encoding="utf-8") as outf:
-        outf.write(pformat(ast, width=120))
+        outf.write(pformat(ast, width=1000))
         outf.write("\n")
 
     print(f"\nAST saved to: {out_path}")
