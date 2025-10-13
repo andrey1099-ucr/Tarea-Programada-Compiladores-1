@@ -88,9 +88,9 @@ class Parser:
 
     # assignment
     def p_assignment(self, p):
-        """assignment : ID assign_op expression"""
-        p[0] = ("assign", p[2], ("name", p[1]), p[3])
-
+        """assignment : primary assign_op expression"""
+        p[0] = ("assign", p[2], p[1], p[3])
+    
     def p_assign_op(self, p):
         """assign_op : EQUAL
         | PLUS_EQUAL
@@ -242,20 +242,62 @@ class Parser:
 
     def p_expression_not(self, p):
         """expression_not : NOT expression_not
-        | primary"""
+        | expression_cmp"""
         if len(p) == 2:
             p[0] = p[1]
         else:
             p[0] = ("not", p[2])
+    
+    # Allows comparisons inside arithmetic expressions
+    def p_expression_cmp(self, p):
+        """expression_cmp : expression_add_sub relation_op expression_add_sub
+                        | expression_add_sub"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            p[0] = ("cmp", p[2], p[1], p[3])
+    
+    # Arithmetic expression levels
+    def p_expression_add_sub(self, p):
+        """expression_add_sub : expression_add_sub ADD expression_ops
+        | expression_add_sub MINUS expression_ops
+        | expression_ops"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            p[0] = ("arithmetic expression", p[2], p[1], p[3])
+
+    def p_expression_ops(self, p):
+        """expression_ops : expression_ops TIMES expression_power
+        | expression_ops DIVIDE expression_power
+        | expression_ops FLOORDIV expression_power
+        | expression_ops MODULE expression_power
+        | expression_power"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            p[0] = ("arithmetic expression", p[2], p[1], p[3])
+
+    def p_expression_power(self, p):
+        """expression_power : expression_power POWER primary
+        | primary"""
+        if len(p) == 2:
+            p[0] = p[1]
+        else:
+            p[0] = ("arithmetic expression", p[2], p[1], p[3])
 
     # Primary: calls, grouping, atoms
     def p_primary_call(self, p):
-        """primary : ID LPAREN opt_arglist RPAREN"""
-        p[0] = ("call", ("name", p[1]), p[3])
-
+        """primary : primary LPAREN opt_arglist RPAREN"""
+        p[0] = ("call", p[1], p[3])
+    
     def p_primary_group(self, p):
         """primary : LPAREN expression RPAREN"""
         p[0] = p[2]
+
+    def p_primary_attribute(self, p):
+        """primary : primary DOT ID"""
+        p[0] = ("attribute", p[1], ("name", p[3]))
 
     def p_primary_atom(self, p):
         """primary : atom"""
@@ -275,6 +317,48 @@ class Parser:
         else:
             p[1].append(p[3])
             p[0] = p[1]
+
+    # Lists:
+    def p_list(self, p):
+        """atom : LBRACKET opt_list_cont RBRACKET"""
+        p[0] = ("list", p[2])
+
+    def p_opt_list_cont(self, p):
+        """opt_list_cont : list_cont
+        | empty"""
+        p[0] = p[1]
+
+    def p_list_cont(self, p):
+        """list_cont : expression
+        | list_cont COMMA expression"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    # Dictionaries:
+    def p_dictionary(self, p):
+        """atom : LBRACE opt_dict_cont RBRACE"""
+        p[0] = ("dict", p[2])
+
+    def p_opt_dict_cont(self, p):
+        """opt_dict_cont : dict_cont
+        | empty"""
+        p[0] = p[1]
+
+    def p_dict_cont(self, p):
+        """dict_cont : keyvalue
+        | dict_cont COMMA keyvalue"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    def p_keyvalue(self, p):
+        """keyvalue : expression COLON expression"""
+        p[0] = ("pair", p[1], p[3])
 
     # Atoms
     def p_atom_name(self, p):

@@ -2,7 +2,7 @@ import os
 from src.Parser import Parser
 from pprint import pformat
 
-FILE = "./tests/test_CompoundStatements.py"
+FILE = "./tests/test_OOP.py"
 
 if __name__ == "__main__":
     # Build parser (and its lexer)
