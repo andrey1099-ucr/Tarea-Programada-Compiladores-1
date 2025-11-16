@@ -2,30 +2,55 @@ import ply.yacc as yacc
 
 from src.Lexer import Lexer
 from src.utils import Error
+from src.ast_nodes import (
+    Program,
+    ClassDef,
+    FunctionDef,
+    Param,
+    Name,
+    Constant,
+    Assign,
+    Return,
+    Pass,
+    Break,
+    Continue,
+    If,
+    ElifClause,
+    While,
+    For,
+    BinaryOp,
+    UnaryOp,
+    Call,
+    Attribute,
+    ListLiteral,
+    DictLiteral,
+    KeyValue,
+)
 
 
 class Parser:
     # Expose token list from the lexer
     tokens = Lexer.tokens
 
-    def __init__(self, debug=False):
+    def __init__(self, debug: bool = False):
         self.errors = []
         self.data = None
         self.debug = debug
         self.lexer = Lexer(self.errors, debug=self.debug)
         self._parser = None
 
-    def build(self, build_lexer=True):
+    def build(self, build_lexer: bool = True):
         if build_lexer:
             self.lexer.build()
         self._parser = yacc.yacc(module=self, start="program", debug=self.debug)
 
-    def parse(self, data):
+    def parse(self, data: str):
         self.data = data
         self.lexer.input(data)
         return self._parser.parse(input=data, lexer=self.lexer, tracking=True)
 
-    # Error handling
+    # ---------- Error handling ----------
+
     def p_error(self, token):
         if token is None:
             self.errors.append(
@@ -43,9 +68,10 @@ class Parser:
             )
 
     # ---------- Program / logical lines ----------
+
     def p_program(self, p):
         """program : stmt_lines_opt"""
-        p[0] = ("program", p[1])
+        p[0] = Program(body=p[1])
 
     def p_stmt_lines_opt(self, p):
         """stmt_lines_opt : stmt_lines
@@ -76,7 +102,8 @@ class Parser:
         else:
             p[0] = [p[1]]
 
-    # Simple statements
+    # ---------- Simple statements ----------
+
     def p_simple_stmt(self, p):
         """simple_stmt : assignment
         | return_stmt
@@ -89,8 +116,8 @@ class Parser:
     # assignment
     def p_assignment(self, p):
         """assignment : primary assign_op expression"""
-        p[0] = ("assign", p[2], p[1], p[3])
-    
+        p[0] = Assign(target=p[1], op=p[2], value=p[3])
+
     def p_assign_op(self, p):
         """assign_op : EQUAL
         | PLUS_EQUAL
@@ -100,30 +127,35 @@ class Parser:
         | MODULE_EQUAL
         | FLOORDIV_EQUAL
         | POWER_EQUAL"""
+        # Normalize '=' but keep compound assignment names
         p[0] = "=" if p.slice[1].type == "EQUAL" else p.slice[1].type
 
     def p_return_stmt(self, p):
         """return_stmt : RETURN
         | RETURN expression"""
-        p[0] = ("return", None) if len(p) == 2 else ("return", p[2])
+        if len(p) == 2:
+            p[0] = Return(None)
+        else:
+            p[0] = Return(p[2])
 
     def p_pass_stmt(self, p):
         """pass_stmt : PASS"""
-        p[0] = ("pass",)
+        p[0] = Pass()
 
     def p_break_stmt(self, p):
         """break_stmt : BREAK"""
-        p[0] = ("break",)
+        p[0] = Break()
 
     def p_continue_stmt(self, p):
         """continue_stmt : CONTINUE"""
-        p[0] = ("continue",)
+        p[0] = Continue()
 
     def p_expr_stmt(self, p):
         """expr_stmt : expression"""
         p[0] = p[1]
 
-    # Compound statements (class / def / if / for / while)
+    # ---------- Compound statements (class / def / if / for / while) ----------
+
     def p_compound_stmt(self, p):
         """compound_stmt : class_def_stmt
         | function_def_stmt
@@ -132,34 +164,61 @@ class Parser:
         | while_stmt"""
         p[0] = p[1]
 
-    # class NAME: NEWLINE INDENT body DEDENT
-    def p_class_def_stmt(self, p):
-        """class_def_stmt : CLASS ID COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
-        p[0] = ("class", p[2], p[6])
+    # ---------- Class definitions (with optional inheritance) ----------
 
-    # def NAME '(' [params] ')' : NEWLINE INDENT body DEDENT
+    # class A:
+    def p_class_def_simple(self, p):
+        """class_def_stmt : CLASS ID COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
+        p[0] = ClassDef(name=Name(p[2]), bases=[], body=p[6])
+
+    # class B(A, C):
+    def p_class_def_inheritance(self, p):
+        """class_def_stmt : CLASS ID LPAREN base_list RPAREN COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
+        p[0] = ClassDef(name=Name(p[2]), bases=p[4], body=p[9])
+
+    def p_base_list_single(self, p):
+        """base_list : ID"""
+        p[0] = [Name(p[1])]
+
+    def p_base_list_many(self, p):
+        """base_list : base_list COMMA ID"""
+        p[1].append(Name(p[3]))
+        p[0] = p[1]
+
+    # ---------- Function definitions (with optional/default params) ----------
+
     def p_function_def_stmt(self, p):
         """function_def_stmt : DEF ID LPAREN opt_paramlist RPAREN COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
-        p[0] = ("def", ("name", p[2]), p[4], p[9])
+        p[0] = FunctionDef(name=Name(p[2]), params=p[4], body=p[9])
 
     def p_opt_paramlist(self, p):
-        """opt_paramlist : paramlist
+        """opt_paramlist : param_list
         | empty"""
         p[0] = p[1]  # [] if empty
 
-    def p_paramlist(self, p):
-        """paramlist : ID
-        | paramlist COMMA ID"""
-        if len(p) == 2:
-            p[0] = [("name", p[1])]
-        else:
-            p[1].append(("name", p[3]))
-            p[0] = p[1]
+    def p_param_list_single(self, p):
+        """param_list : parameter"""
+        p[0] = [p[1]]
 
-    # if/elif/else
+    def p_param_list_many(self, p):
+        """param_list : param_list COMMA parameter"""
+        p[1].append(p[3])
+        p[0] = p[1]
+
+    # parameter can be "x" or "x = expression"
+    def p_parameter_name(self, p):
+        """parameter : ID"""
+        p[0] = Param(name=Name(p[1]), default=None)
+
+    def p_parameter_default(self, p):
+        """parameter : ID EQUAL expression"""
+        p[0] = Param(name=Name(p[1]), default=p[3])
+
+    # ---------- if / elif / else ----------
+
     def p_if_stmt(self, p):
         """if_stmt : IF condition COLON NEWLINE INDENT stmt_lines_opt DEDENT elif_list_opt else_opt"""
-        p[0] = ("if", p[2], p[6], p[8], p[9])
+        p[0] = If(condition=p[2], body=p[6], elifs=p[8], orelse=p[9])
 
     def p_elif_list_opt(self, p):
         """elif_list_opt : elif_list
@@ -177,34 +236,33 @@ class Parser:
 
     def p_elif_clause(self, p):
         """elif_clause : ELIF condition COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
-        p[0] = ("elif", p[2], p[6])
+        p[0] = ElifClause(condition=p[2], body=p[6])
 
     def p_else_opt(self, p):
         """else_opt : ELSE COLON NEWLINE INDENT stmt_lines_opt DEDENT
         | empty"""
         if len(p) == 2:
-            p[0] = []  # empty
+            p[0] = []  # no else body
         else:
-            p[0] = ("else", p[5])
+            p[0] = p[5]
 
-    # for and while
+    # ---------- for and while ----------
 
-    # for NAME in expression: NEWLINE INDENT body DEDENT
+    # for name in expression:
     def p_for_stmt(self, p):
         """for_stmt : FOR ID IN expression COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
-        # ('for', ('name', target), iterable_expr, body)
-        p[0] = ("for", ("name", p[2]), p[4], p[8])
+        p[0] = For(target=Name(p[2]), iterable=p[4], body=p[8])
 
-    # while condition: NEWLINE INDENT body DEDENT
+    # while condition:
     def p_while_stmt(self, p):
         """while_stmt : WHILE condition COLON NEWLINE INDENT stmt_lines_opt DEDENT"""
-        # ('while', condition, body)
-        p[0] = ("while", p[2], p[6])
+        p[0] = While(condition=p[2], body=p[6])
 
-    # Conditions / relations
+    # ---------- Conditions / relations ----------
+
     def p_condition_binary(self, p):
         """condition : expression relation_op expression"""
-        p[0] = ("cmp", p[2], p[1], p[3])
+        p[0] = BinaryOp(op=p[2], left=p[1], right=p[3])
 
     def p_condition_expr(self, p):
         """condition : expression"""
@@ -219,7 +277,8 @@ class Parser:
         | GREATER_EQUAL"""
         p[0] = p.slice[1].type
 
-    # Expressions (OR > AND > NOT > primary)
+    # ---------- Expressions ----------
+
     def p_expression(self, p):
         """expression : expression_or"""
         p[0] = p[1]
@@ -230,7 +289,7 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("or", p[1], p[3])
+            p[0] = BinaryOp(op="OR", left=p[1], right=p[3])
 
     def p_expression_and(self, p):
         """expression_and : expression_and AND expression_not
@@ -238,7 +297,7 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("and", p[1], p[3])
+            p[0] = BinaryOp(op="AND", left=p[1], right=p[3])
 
     def p_expression_not(self, p):
         """expression_not : NOT expression_not
@@ -246,18 +305,19 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("not", p[2])
-    
+            p[0] = UnaryOp(op="NOT", operand=p[2])
+
     # Allows comparisons inside arithmetic expressions
     def p_expression_cmp(self, p):
         """expression_cmp : expression_add_sub relation_op expression_add_sub
-                        | expression_add_sub"""
+        | expression_add_sub"""
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("cmp", p[2], p[1], p[3])
-    
-    # Arithmetic expression levels
+            p[0] = BinaryOp(op=p[2], left=p[1], right=p[3])
+
+    # ---------- Arithmetic expression levels ----------
+
     def p_expression_add_sub(self, p):
         """expression_add_sub : expression_add_sub ADD expression_ops
         | expression_add_sub MINUS expression_ops
@@ -265,7 +325,8 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("arithmetic expression", p[2], p[1], p[3])
+            op = p.slice[2].type  # ADD or MINUS
+            p[0] = BinaryOp(op=op, left=p[1], right=p[3])
 
     def p_expression_ops(self, p):
         """expression_ops : expression_ops TIMES expression_power
@@ -276,7 +337,8 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("arithmetic expression", p[2], p[1], p[3])
+            op = p.slice[2].type  # TIMES, DIVIDE, etc.
+            p[0] = BinaryOp(op=op, left=p[1], right=p[3])
 
     def p_expression_power(self, p):
         """expression_power : expression_power POWER primary
@@ -284,20 +346,22 @@ class Parser:
         if len(p) == 2:
             p[0] = p[1]
         else:
-            p[0] = ("arithmetic expression", p[2], p[1], p[3])
+            op = p.slice[2].type  # POWER
+            p[0] = BinaryOp(op=op, left=p[1], right=p[3])
 
-    # Primary: calls, grouping, atoms
+    # ---------- Primaries: calls, grouping, attributes, atoms ----------
+
     def p_primary_call(self, p):
         """primary : primary LPAREN opt_arglist RPAREN"""
-        p[0] = ("call", p[1], p[3])
-    
+        p[0] = Call(func=p[1], args=p[3])
+
     def p_primary_group(self, p):
         """primary : LPAREN expression RPAREN"""
         p[0] = p[2]
 
     def p_primary_attribute(self, p):
         """primary : primary DOT ID"""
-        p[0] = ("attribute", p[1], ("name", p[3]))
+        p[0] = Attribute(value=p[1], attr=Name(p[3]))
 
     def p_primary_atom(self, p):
         """primary : atom"""
@@ -318,10 +382,11 @@ class Parser:
             p[1].append(p[3])
             p[0] = p[1]
 
-    # Lists:
+    # ---------- List literals ----------
+
     def p_list(self, p):
         """atom : LBRACKET opt_list_cont RBRACKET"""
-        p[0] = ("list", p[2])
+        p[0] = ListLiteral(elements=p[2])
 
     def p_opt_list_cont(self, p):
         """opt_list_cont : list_cont
@@ -337,10 +402,11 @@ class Parser:
             p[1].append(p[3])
             p[0] = p[1]
 
-    # Dictionaries:
+    # ---------- Dictionary literals ----------
+
     def p_dictionary(self, p):
         """atom : LBRACE opt_dict_cont RBRACE"""
-        p[0] = ("dict", p[2])
+        p[0] = DictLiteral(pairs=p[2])
 
     def p_opt_dict_cont(self, p):
         """opt_dict_cont : dict_cont
@@ -358,28 +424,31 @@ class Parser:
 
     def p_keyvalue(self, p):
         """keyvalue : expression COLON expression"""
-        p[0] = ("pair", p[1], p[3])
+        p[0] = KeyValue(key=p[1], value=p[3])
 
-    # Atoms
+    # ---------- Atoms ----------
+
     def p_atom_name(self, p):
         """atom : ID"""
-        p[0] = ("name", p[1])
+        p[0] = Name(p[1])
 
     def p_atom_number(self, p):
         """atom : INTEGER
         | FLOAT"""
-        p[0] = ("num", p[1])
+        p[0] = Constant(p[1])
 
     def p_atom_string(self, p):
         """atom : STRING"""
-        p[0] = ("str", p[1])
+        p[0] = Constant(p[1])
 
     def p_atom_bool(self, p):
         """atom : TRUE
         | FALSE"""
-        p[0] = ("bool", True if p.slice[1].type == "TRUE" else False)
+        value = True if p.slice[1].type == "TRUE" else False
+        p[0] = Constant(value)
 
-    # Utility
+    # ---------- Utility ----------
+
     def p_empty(self, p):
         """empty :"""
         p[0] = []
