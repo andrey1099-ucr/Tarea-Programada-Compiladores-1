@@ -381,3 +381,27 @@ inline PyValue py_or(const PyValue &a, const PyValue &b) {
     }
     return b;
 }
+
+// ====================== Builtins: str() and len() ======================
+
+// Convert any PyValue to its string representation, wrapped again in PyValue.
+inline PyValue py_str(const PyValue &v) {
+    return PyValue(v.to_string());
+}
+
+// Return the length of a value as a PyValue(int).
+// Supports: string, list, dict. Raises runtime error otherwise.
+inline PyValue py_len(const PyValue &v) {
+    switch (v.type) {
+        case PyValue::STRING:
+            return PyValue(static_cast<long long>(v.string_value.size()));
+        case PyValue::LIST:
+            return PyValue(static_cast<long long>(v.list_value.size()));
+        case PyValue::DICT:
+            return PyValue(static_cast<long long>(v.dict_value.size()));
+        default:
+            throw std::runtime_error(
+                "TypeError: object of type '" + v.type_name() + "' has no len()"
+            );
+    }
+}
