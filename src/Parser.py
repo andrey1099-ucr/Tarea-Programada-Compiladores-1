@@ -22,7 +22,9 @@ from src.ast_nodes import (
     UnaryOp,
     Call,
     Attribute,
+    Index,
     ListLiteral,
+    TupleLiteral,
     DictLiteral,
     KeyValue,
 )
@@ -349,19 +351,19 @@ class Parser:
             op = p.slice[2].type  # POWER
             p[0] = BinaryOp(op=op, left=p[1], right=p[3])
 
-    # ---------- Primaries: calls, grouping, attributes, atoms ----------
+    # ---------- Primaries: calls, attributes, indexing, atoms ----------
 
     def p_primary_call(self, p):
         """primary : primary LPAREN opt_arglist RPAREN"""
         p[0] = Call(func=p[1], args=p[3])
 
-    def p_primary_group(self, p):
-        """primary : LPAREN expression RPAREN"""
-        p[0] = p[2]
-
     def p_primary_attribute(self, p):
         """primary : primary DOT ID"""
         p[0] = Attribute(value=p[1], attr=Name(p[3]))
+
+    def p_primary_index(self, p):
+        """primary : primary LBRACKET expression RBRACKET"""
+        p[0] = Index(value=p[1], index=p[3])
 
     def p_primary_atom(self, p):
         """primary : atom"""
@@ -396,6 +398,33 @@ class Parser:
     def p_list_cont(self, p):
         """list_cont : expression
         | list_cont COMMA expression"""
+        if len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[1].append(p[3])
+            p[0] = p[1]
+
+    # ---------- Tuple literals and grouped expressions ----------
+
+    def p_atom_group(self, p):
+        """atom : LPAREN expression RPAREN"""
+        # Parenthesized expression, not a tuple.
+        p[0] = p[2]
+
+    def p_atom_tuple(self, p):
+        """atom : LPAREN expression COMMA opt_tuple_cont RPAREN"""
+        # (a, b, c) or (a,) -> tuple literal
+        elements = [p[2]] + p[4]
+        p[0] = TupleLiteral(elements=elements)
+
+    def p_opt_tuple_cont(self, p):
+        """opt_tuple_cont : tuple_cont
+        | empty"""
+        p[0] = p[1]
+
+    def p_tuple_cont(self, p):
+        """tuple_cont : expression
+        | tuple_cont COMMA expression"""
         if len(p) == 2:
             p[0] = [p[1]]
         else:
