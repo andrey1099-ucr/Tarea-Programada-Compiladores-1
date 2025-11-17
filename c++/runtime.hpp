@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <iostream>
 #include <stdexcept>
 #include <sstream>
@@ -12,6 +13,7 @@ struct PyValue;
 
 using PyList = std::vector<PyValue>;
 using PyDict = std::map<std::string, PyValue>;
+using PyTuple = std::vector<PyValue>;
 
 struct PyValue {
     enum Type {
@@ -21,7 +23,8 @@ struct PyValue {
         BOOL,
         STRING,
         LIST,
-        DICT
+        DICT,
+        TUPLE
     };
 
     Type type;
@@ -32,57 +35,67 @@ struct PyValue {
     std::string string_value;
     PyList list_value;
     PyDict dict_value;
+    PyTuple tuple_value;
 
     // ----- Constructors -----
 
-    PyValue() : type(NONE),
-                int_value(0),
-                float_value(0.0),
-                bool_value(false) {}
+    PyValue()
+        : type(NONE),
+          int_value(0),
+          float_value(0.0),
+          bool_value(false) {}
 
-    PyValue(long long v) : type(INT),
-                           int_value(v),
-                           float_value(0.0),
-                           bool_value(false) {}
+    PyValue(long long v)
+        : type(INT),
+          int_value(v),
+          float_value(0.0),
+          bool_value(false) {}
 
-    PyValue(int v) : type(INT),
-                     int_value(v),
-                     float_value(0.0),
-                     bool_value(false) {}
+    PyValue(int v)
+        : type(INT),
+          int_value(v),
+          float_value(0.0),
+          bool_value(false) {}
 
-    PyValue(double v) : type(FLOAT),
-                        int_value(0),
-                        float_value(v),
-                        bool_value(false) {}
+    PyValue(double v)
+        : type(FLOAT),
+          int_value(0),
+          float_value(v),
+          bool_value(false) {}
 
-    PyValue(bool v) : type(BOOL),
-                      int_value(0),
-                      float_value(0.0),
-                      bool_value(v) {}
+    PyValue(bool v)
+        : type(BOOL),
+          int_value(0),
+          float_value(0.0),
+          bool_value(v) {}
 
-    PyValue(const std::string &s) : type(STRING),
-                                    int_value(0),
-                                    float_value(0.0),
-                                    bool_value(false),
-                                    string_value(s) {}
+    PyValue(const std::string& s)
+        : type(STRING),
+          int_value(0),
+          float_value(0.0),
+          bool_value(false),
+          string_value(s) {}
 
-    PyValue(const char *s) : type(STRING),
-                             int_value(0),
-                             float_value(0.0),
-                             bool_value(false),
-                             string_value(s) {}
+    PyValue(const char* s)
+        : type(STRING),
+          int_value(0),
+          float_value(0.0),
+          bool_value(false),
+          string_value(s) {}
 
-    PyValue(const PyList &lst) : type(LIST),
-                                 int_value(0),
-                                 float_value(0.0),
-                                 bool_value(false),
-                                 list_value(lst) {}
+    PyValue(const PyList& lst)
+        : type(LIST),
+          int_value(0),
+          float_value(0.0),
+          bool_value(false),
+          list_value(lst) {}
 
-    PyValue(const PyDict &dict) : type(DICT),
-                                  int_value(0),
-                                  float_value(0.0),
-                                  bool_value(false),
-                                  dict_value(dict) {}
+    PyValue(const PyDict& dict)
+        : type(DICT),
+          int_value(0),
+          float_value(0.0),
+          bool_value(false),
+          dict_value(dict) {}
 
     // ----- Helpers -----
 
@@ -95,6 +108,7 @@ struct PyValue {
             case STRING: return "str";
             case LIST:   return "list";
             case DICT:   return "dict";
+            case TUPLE:  return "tuple";
             default:     return "unknown";
         }
     }
@@ -115,6 +129,8 @@ struct PyValue {
                 return !list_value.empty();
             case DICT:
                 return !dict_value.empty();
+            case TUPLE:
+                return !tuple_value.empty();
             default:
                 return false;
         }
@@ -139,7 +155,7 @@ struct PyValue {
             case STRING:
                 oss << string_value;
                 break;
-            case LIST:
+            case LIST: {
                 oss << "[";
                 for (std::size_t i = 0; i < list_value.size(); ++i) {
                     if (i > 0) {
@@ -149,10 +165,11 @@ struct PyValue {
                 }
                 oss << "]";
                 break;
+            }
             case DICT: {
                 oss << "{";
                 bool first = true;
-                for (const auto &kv : dict_value) {
+                for (const auto& kv : dict_value) {
                     if (!first) {
                         oss << ", ";
                     }
@@ -160,6 +177,20 @@ struct PyValue {
                     oss << kv.first << ": " << kv.second.to_string();
                 }
                 oss << "}";
+                break;
+            }
+            case TUPLE: {
+                oss << "(";
+                for (std::size_t i = 0; i < tuple_value.size(); ++i) {
+                    if (i > 0) {
+                        oss << ", ";
+                    }
+                    oss << tuple_value[i].to_string();
+                }
+                if (tuple_value.size() == 1) {
+                    oss << ",";
+                }
+                oss << ")";
                 break;
             }
         }
@@ -171,12 +202,11 @@ struct PyValue {
 
 // ====================== Printing ======================
 
-inline void py_print(const PyValue &v) {
+inline void py_print(const PyValue& v) {
     std::cout << v.to_string() << std::endl;
 }
 
-// Optional: print multiple arguments like Python's print(a, b, c)
-inline void py_print_many(const std::vector<PyValue> &args) {
+inline void py_print_many(const std::vector<PyValue>& args) {
     for (std::size_t i = 0; i < args.size(); ++i) {
         if (i > 0) {
             std::cout << " ";
@@ -189,7 +219,7 @@ inline void py_print_many(const std::vector<PyValue> &args) {
 
 // ====================== Arithmetic helpers ======================
 
-inline double as_double_for_arith(const PyValue &v) {
+inline double as_double_for_arith(const PyValue& v) {
     if (v.type == PyValue::INT) {
         return static_cast<double>(v.int_value);
     }
@@ -199,7 +229,7 @@ inline double as_double_for_arith(const PyValue &v) {
     throw std::runtime_error("TypeError: expected numeric type, got " + v.type_name());
 }
 
-inline long long as_int_for_mod(const PyValue &v) {
+inline long long as_int_for_mod(const PyValue& v) {
     if (v.type == PyValue::INT) {
         return v.int_value;
     }
@@ -208,7 +238,7 @@ inline long long as_int_for_mod(const PyValue &v) {
 
 
 // a + b
-inline PyValue py_add(const PyValue &a, const PyValue &b) {
+inline PyValue py_add(const PyValue& a, const PyValue& b) {
     // int + int -> int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value + b.int_value);
@@ -233,7 +263,7 @@ inline PyValue py_add(const PyValue &a, const PyValue &b) {
 }
 
 // a - b
-inline PyValue py_sub(const PyValue &a, const PyValue &b) {
+inline PyValue py_sub(const PyValue& a, const PyValue& b) {
     // int - int -> int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value - b.int_value);
@@ -253,7 +283,7 @@ inline PyValue py_sub(const PyValue &a, const PyValue &b) {
 }
 
 // a * b
-inline PyValue py_mul(const PyValue &a, const PyValue &b) {
+inline PyValue py_mul(const PyValue& a, const PyValue& b) {
     // int * int -> int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value * b.int_value);
@@ -273,7 +303,7 @@ inline PyValue py_mul(const PyValue &a, const PyValue &b) {
 }
 
 // a / b
-inline PyValue py_div(const PyValue &a, const PyValue &b) {
+inline PyValue py_div(const PyValue& a, const PyValue& b) {
     double da = as_double_for_arith(a);
     double db = as_double_for_arith(b);
     if (db == 0.0) {
@@ -283,7 +313,7 @@ inline PyValue py_div(const PyValue &a, const PyValue &b) {
 }
 
 // a % b (integers only)
-inline PyValue py_mod(const PyValue &a, const PyValue &b) {
+inline PyValue py_mod(const PyValue& a, const PyValue& b) {
     long long ia = as_int_for_mod(a);
     long long ib = as_int_for_mod(b);
     if (ib == 0) {
@@ -295,7 +325,7 @@ inline PyValue py_mod(const PyValue &a, const PyValue &b) {
 
 // ====================== Comparisons ======================
 
-inline PyValue py_eq(const PyValue &a, const PyValue &b) {
+inline PyValue py_eq(const PyValue& a, const PyValue& b) {
     // Same type basic comparison
     if (a.type == b.type) {
         switch (a.type) {
@@ -310,7 +340,7 @@ inline PyValue py_eq(const PyValue &a, const PyValue &b) {
             case PyValue::STRING:
                 return PyValue(a.string_value == b.string_value);
             default:
-                // For LIST/DICT we could implement deep compare, but it's not needed now.
+                // For LIST/DICT/TUPLE we skip deep compare for now.
                 return PyValue(false);
         }
     }
@@ -327,30 +357,30 @@ inline PyValue py_eq(const PyValue &a, const PyValue &b) {
     return PyValue(false);
 }
 
-inline PyValue py_ne(const PyValue &a, const PyValue &b) {
+inline PyValue py_ne(const PyValue& a, const PyValue& b) {
     PyValue eq = py_eq(a, b);
     return PyValue(!eq.bool_value);
 }
 
-inline PyValue py_lt(const PyValue &a, const PyValue &b) {
+inline PyValue py_lt(const PyValue& a, const PyValue& b) {
     double da = as_double_for_arith(a);
     double db = as_double_for_arith(b);
     return PyValue(da < db);
 }
 
-inline PyValue py_le(const PyValue &a, const PyValue &b) {
+inline PyValue py_le(const PyValue& a, const PyValue& b) {
     double da = as_double_for_arith(a);
     double db = as_double_for_arith(b);
     return PyValue(da <= db);
 }
 
-inline PyValue py_gt(const PyValue &a, const PyValue &b) {
+inline PyValue py_gt(const PyValue& a, const PyValue& b) {
     double da = as_double_for_arith(a);
     double db = as_double_for_arith(b);
     return PyValue(da > db);
 }
 
-inline PyValue py_ge(const PyValue &a, const PyValue &b) {
+inline PyValue py_ge(const PyValue& a, const PyValue& b) {
     double da = as_double_for_arith(a);
     double db = as_double_for_arith(b);
     return PyValue(da >= db);
@@ -359,39 +389,32 @@ inline PyValue py_ge(const PyValue &a, const PyValue &b) {
 
 // ====================== Logical ops (and, or, not) ======================
 
-// Note: arguments already evaluated.
-// We only implement truthiness and boolean-like behavior.
-
-inline PyValue py_not(const PyValue &v) {
+inline PyValue py_not(const PyValue& v) {
     return PyValue(!v.is_truthy());
 }
 
-inline PyValue py_and(const PyValue &a, const PyValue &b) {
-    // Returns first falsy or second
+inline PyValue py_and(const PyValue& a, const PyValue& b) {
     if (!a.is_truthy()) {
         return a;
     }
     return b;
 }
 
-inline PyValue py_or(const PyValue &a, const PyValue &b) {
-    // Returns first truthy or second
+inline PyValue py_or(const PyValue& a, const PyValue& b) {
     if (a.is_truthy()) {
         return a;
     }
     return b;
 }
 
+
 // ====================== Builtins: str() and len() ======================
 
-// Convert any PyValue to its string representation, wrapped again in PyValue.
-inline PyValue py_str(const PyValue &v) {
+inline PyValue py_str(const PyValue& v) {
     return PyValue(v.to_string());
 }
 
-// Return the length of a value as a PyValue(int).
-// Supports: string, list, dict. Raises runtime error otherwise.
-inline PyValue py_len(const PyValue &v) {
+inline PyValue py_len(const PyValue& v) {
     switch (v.type) {
         case PyValue::STRING:
             return PyValue(static_cast<long long>(v.string_value.size()));
@@ -399,9 +422,105 @@ inline PyValue py_len(const PyValue &v) {
             return PyValue(static_cast<long long>(v.list_value.size()));
         case PyValue::DICT:
             return PyValue(static_cast<long long>(v.dict_value.size()));
+        case PyValue::TUPLE:
+            return PyValue(static_cast<long long>(v.tuple_value.size()));
         default:
             throw std::runtime_error(
                 "TypeError: object of type '" + v.type_name() + "' has no len()"
             );
     }
+}
+
+
+// ====================== Containers: list, dict, tuple helpers ======================
+
+inline PyValue py_list(const std::vector<PyValue>& items) {
+    return PyValue(items);
+}
+
+inline PyValue py_dict(const std::vector<std::pair<PyValue, PyValue>>& items) {
+    PyDict dict;
+
+    for (const auto& kv : items) {
+        const PyValue& k = kv.first;
+        const PyValue& v = kv.second;
+
+        // For simplicity, use the string representation of the key.
+        std::string key_str = k.to_string();
+        dict[key_str] = v;
+    }
+
+    return PyValue(dict);
+}
+
+inline PyValue py_tuple(const std::vector<PyValue>& items) {
+    PyValue v;
+    v.type = PyValue::TUPLE;
+    v.int_value = 0;
+    v.float_value = 0.0;
+    v.bool_value = false;
+    v.tuple_value = items;
+    return v;
+}
+
+// Implements Python-like indexing: value[index].
+inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
+    // list[index]
+    if (container.type == PyValue::LIST) {
+        if (index.type != PyValue::INT) {
+            throw std::runtime_error("TypeError: list indices must be integers");
+        }
+        long long i = index.int_value;
+        if (i < 0 || i >= static_cast<long long>(container.list_value.size())) {
+            throw std::runtime_error("IndexError: list index out of range");
+        }
+        return container.list_value[static_cast<std::size_t>(i)];
+    }
+
+    // tuple[index]
+    if (container.type == PyValue::TUPLE) {
+        if (index.type != PyValue::INT) {
+            throw std::runtime_error("TypeError: tuple indices must be integers");
+        }
+        long long i = index.int_value;
+        if (i < 0 || i >= static_cast<long long>(container.tuple_value.size())) {
+            throw std::runtime_error("IndexError: tuple index out of range");
+        }
+        return container.tuple_value[static_cast<std::size_t>(i)];
+    }
+
+    // string[index]  -> a 1-character string
+    if (container.type == PyValue::STRING) {
+        if (index.type != PyValue::INT) {
+            throw std::runtime_error("TypeError: string indices must be integers");
+        }
+        long long i = index.int_value;
+        if (i < 0 || i >= static_cast<long long>(container.string_value.size())) {
+            throw std::runtime_error("IndexError: string index out of range");
+        }
+        char c = container.string_value[static_cast<std::size_t>(i)];
+        return PyValue(std::string(1, c));
+    }
+
+    // dict[key]
+    if (container.type == PyValue::DICT) {
+        std::string key_str;
+
+        if (index.type == PyValue::STRING) {
+            key_str = index.string_value;
+        } else {
+            key_str = index.to_string();
+        }
+
+        auto it = container.dict_value.find(key_str);
+        if (it == container.dict_value.end()) {
+            throw std::runtime_error("KeyError: key not found: " + key_str);
+        }
+        return it->second;
+    }
+
+    // Not subscriptable
+    throw std::runtime_error(
+        "TypeError: object of type '" + container.type_name() + "' is not subscriptable"
+    );
 }

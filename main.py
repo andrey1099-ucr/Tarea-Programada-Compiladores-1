@@ -5,7 +5,7 @@ from src.Parser import Parser
 from src.cpp_transpiler import CppTranspiler
 
 # Input Fangless Python source file
-FILE = "./tests/test_transpile_basic.py"
+FILE = "./tests/test_profe.py"
 
 
 if __name__ == "__main__":

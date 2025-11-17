@@ -33,7 +33,7 @@ int main() {
     a = PyValue("hola");
     b = py_add(a, py_str(b));
     py_print(b);
-    a = py_list(std::vector<PyValue>{ PyValue(1), PyValue("hola"), py_dict(std::vector<std::pair<PyValue, PyValue>>{ std::make_pair(PyValue("z"), PyValue(1)), std::make_pair(PyValue("x"), PyValue("ECCI")) }), py_list(std::vector<PyValue>{ PyValue(1), PyValue(2), PyValue(3), PyValue(4) }) });
+    a = py_list(std::vector<PyValue>{ PyValue(1), PyValue("hola"), py_dict(std::vector<std::pair<PyValue, PyValue>>{ std::make_pair(PyValue("z"), PyValue(1)), std::make_pair(PyValue("x"), PyValue("ECCI")) }), py_list(std::vector<PyValue>{ PyValue(1), PyValue(2), PyValue(3), PyValue(4) }), py_tuple(std::vector<PyValue>{ PyValue(1), PyValue(2), PyValue(3), PyValue(4) }) });
     py_print(a);
     py_print(PyValue("Fibonacci"));
     {
@@ -47,10 +47,17 @@ int main() {
     }
     {
         PyValue __iter = py_getitem(a, PyValue(3));
-        if (__iter.type != PyValue::LIST) { throw std::runtime_error("TypeError: can only iterate over list in for-loop"); }
-        for (std::size_t __idx = 0; __idx < __iter.list_value.size(); ++__idx) {
-            e = __iter.list_value[__idx];
-            py_print(e);
+        if (__iter.type != PyValue::LIST && __iter.type != PyValue::TUPLE) { throw std::runtime_error("TypeError: can only iterate over list or tuple in for-loop"); }
+        if (__iter.type == PyValue::LIST) {
+            for (std::size_t __idx = 0; __idx < __iter.list_value.size(); ++__idx) {
+                e = __iter.list_value[__idx];
+                py_print(e);
+            }
+        } else {
+            for (std::size_t __idx = 0; __idx < __iter.tuple_value.size(); ++__idx) {
+                e = __iter.tuple_value[__idx];
+                py_print(e);
+            }
         }
     }
     a = PyValue(5);
@@ -60,8 +67,7 @@ int main() {
         c = b;
         b = PyValue("hola");
         b = py_sub(c, PyValue(2));
-        a = py_add(a, PyValue(1));
     }
-    py_print(PyValue("Done"));
+    py_print(PyValue("Si printeo mis probabilidades de graduarme suben :)"));
     return 0;
 }
