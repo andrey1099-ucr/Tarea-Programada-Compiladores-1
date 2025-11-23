@@ -3,6 +3,7 @@ parsetab.py
 .vscode
 c++/*.exe
 tests/*.exe
+tests/*.cpp
 
 
 
