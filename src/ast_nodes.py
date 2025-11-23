@@ -140,7 +140,20 @@ class Attribute(Node):
 
 
 @dataclass
+class Index(Node):
+    """Represents value[index], e.g. a[0] or a[i]."""
+
+    value: Node
+    index: Node
+
+
+@dataclass
 class ListLiteral(Node):
+    elements: List[Node] = field(default_factory=list)
+
+
+@dataclass
+class TupleLiteral(Node):
     elements: List[Node] = field(default_factory=list)
 
 
