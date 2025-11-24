@@ -11,17 +11,25 @@ from src.ast_nodes import (
     Constant,
     Assign,
     Return,
+    Pass,
+    Break,
+    Continue,
     If,
     While,
+    For,
     Call,
     BinaryOp,
     UnaryOp,
+    ListLiteral,
+    TupleLiteral,
+    DictLiteral,
+    KeyValue,
+    Index,
     Node,
 )
 
 
 class CppTranspiler:
-
     def __init__(self) -> None:
         self.lines: List[str] = []
         self.indent_level: int = 0
@@ -86,7 +94,7 @@ class CppTranspiler:
         Traverse a list of statements and return the set of variable names
         that appear as assignment targets (Name nodes).
 
-        This includes assignments inside if / elif / else / while blocks.
+        This includes assignments inside if / elif / else / while / for blocks.
         """
         names: Set[str] = set()
 
@@ -106,6 +114,12 @@ class CppTranspiler:
                     names |= self._collect_assigned_names_in_stmts(stmt.orelse)
 
             elif isinstance(stmt, While):
+                names |= self._collect_assigned_names_in_stmts(stmt.body)
+
+            elif isinstance(stmt, For):
+                # loop variable
+                if isinstance(stmt.target, Name):
+                    names.add(stmt.target.id)
                 names |= self._collect_assigned_names_in_stmts(stmt.body)
 
         return names
@@ -174,8 +188,16 @@ class CppTranspiler:
             self._emit_if(node, declared)
         elif isinstance(node, While):
             self._emit_while(node, declared)
+        elif isinstance(node, For):
+            self._emit_for(node, declared)
         elif isinstance(node, Call):
             self._emit_call_stmt(node, declared)
+        elif isinstance(node, Pass):
+            self._emit("; // pass")
+        elif isinstance(node, Break):
+            self._emit("break;")
+        elif isinstance(node, Continue):
+            self._emit("continue;")
         else:
             raise NotImplementedError(f"Unsupported statement: {type(node).__name__}")
 
@@ -241,6 +263,127 @@ class CppTranspiler:
         self._dedent()
         self._emit("}")
 
+    def _emit_for(self, stmt: For, declared: Set[str]) -> None:
+        # Support two cases:
+        #   for i in range(...):
+        #   for x in some list or tuple:
+        iterable = stmt.iterable
+
+        if (
+            isinstance(iterable, Call)
+            and isinstance(iterable.func, Name)
+            and iterable.func.id == "range"
+        ):
+            self._emit_for_range(stmt, iterable, declared)
+        else:
+            self._emit_for_iterable(stmt, declared)
+
+    def _emit_for_range(self, stmt: For, range_call: Call, declared: Set[str]) -> None:
+        target_name = stmt.target.id
+        args = range_call.args
+        n = len(args)
+
+        # Translate Python range into start, stop, step.
+        if n == 1:
+            start_code = "PyValue(0)"
+            stop_code = self._expr(args[0])
+            step_code = "PyValue(1)"
+        elif n == 2:
+            start_code = self._expr(args[0])
+            stop_code = self._expr(args[1])
+            step_code = "PyValue(1)"
+        elif n == 3:
+            start_code = self._expr(args[0])
+            stop_code = self._expr(args[1])
+            step_code = self._expr(args[2])
+        else:
+            raise NotImplementedError(
+                "range() with more than 3 arguments is not supported"
+            )
+
+        self._emit("{")
+        self._indent()
+
+        # Evaluate start/stop/step once.
+        self._emit(f"PyValue __range_start = {start_code};")
+        self._emit(f"PyValue __range_stop = {stop_code};")
+        self._emit(f"PyValue __range_step = {step_code};")
+
+        # Make sure the loop variable is declared.
+        if target_name not in declared:
+            self._emit(f"PyValue {target_name};")
+            declared.add(target_name)
+
+        self._emit(
+            "for (long long __i = __range_start.int_value; "
+            "__i < __range_stop.int_value; "
+            "__i += __range_step.int_value) {"
+        )
+        self._indent()
+
+        # Assign value to the loop variable each iteration.
+        self._emit(f"{target_name} = PyValue(__i);")
+
+        for s in stmt.body:
+            self._emit_stmt(s, declared)
+
+        self._dedent()
+        self._emit("}")
+
+        self._dedent()
+        self._emit("}")
+
+    def _emit_for_iterable(self, stmt: For, declared: Set[str]) -> None:
+        target_name = stmt.target.id
+        iter_code = self._expr(stmt.iterable)
+
+        self._emit("{")
+        self._indent()
+
+        # Evaluate iterable expression once.
+        self._emit(f"PyValue __iter = {iter_code};")
+
+        # Simple runtime check: only lists and tuples are supported here.
+        self._emit(
+            "if (__iter.type != PyValue::LIST && __iter.type != PyValue::TUPLE) { "
+            'throw std::runtime_error("TypeError: can only iterate over list or tuple in for-loop"); '
+            "}"
+        )
+
+        if target_name not in declared:
+            self._emit(f"PyValue {target_name};")
+            declared.add(target_name)
+
+        # Choose underlying container depending on type.
+        self._emit("if (__iter.type == PyValue::LIST) {")
+        self._indent()
+        self._emit(
+            "for (std::size_t __idx = 0; __idx < __iter.list_value.size(); ++__idx) {"
+        )
+        self._indent()
+        self._emit(f"{target_name} = __iter.list_value[__idx];")
+        for s in stmt.body:
+            self._emit_stmt(s, declared)
+        self._dedent()
+        self._emit("}")
+        self._dedent()
+        self._emit("} else {")
+        self._indent()
+        self._emit(
+            "for (std::size_t __idx = 0; __idx < __iter.tuple_value.size(); ++__idx) {"
+        )
+        self._indent()
+        self._emit(f"{target_name} = __iter.tuple_value[__idx];")
+        for s in stmt.body:
+            self._emit_stmt(s, declared)
+        self._dedent()
+        self._emit("}")
+        self._dedent()
+        self._emit("}")
+
+        self._dedent()
+        self._emit("}")
+
     def _emit_call_stmt(self, call: Call, declared: Set[str]) -> None:
         # Special-case builtin print(...)
         if isinstance(call.func, Name) and call.func.id == "print":
@@ -267,6 +410,14 @@ class CppTranspiler:
             return self._expr_unary(node)
         if isinstance(node, Call):
             return self._expr_call(node)
+        if isinstance(node, ListLiteral):
+            return self._expr_list_literal(node)
+        if isinstance(node, TupleLiteral):
+            return self._expr_tuple_literal(node)
+        if isinstance(node, DictLiteral):
+            return self._expr_dict_literal(node)
+        if isinstance(node, Index):
+            return self._expr_index(node)
 
         raise NotImplementedError(f"Unsupported expression: {type(node).__name__}")
 
@@ -360,3 +511,39 @@ class CppTranspiler:
             return f"{func_name}({args_code})"
 
         raise NotImplementedError("Only simple function calls are supported for now")
+
+    def _expr_list_literal(self, node: ListLiteral) -> str:
+        # py_list(std::vector<PyValue>{ elem1, elem2, ... })
+        if not node.elements:
+            return "py_list(std::vector<PyValue>{})"
+
+        elems_code = ", ".join(self._expr(e) for e in node.elements)
+        return f"py_list(std::vector<PyValue>{{ {elems_code} }})"
+
+    def _expr_tuple_literal(self, node: TupleLiteral) -> str:
+        # py_tuple(std::vector<PyValue>{ elem1, elem2, ... })
+        if not node.elements:
+            return "py_tuple(std::vector<PyValue>{})"
+
+        elems_code = ", ".join(self._expr(e) for e in node.elements)
+        return f"py_tuple(std::vector<PyValue>{{ {elems_code} }})"
+
+    def _expr_dict_literal(self, node: DictLiteral) -> str:
+        # py_dict(std::vector<std::pair<PyValue, PyValue>>{ {k1,v1}, {k2,v2}, ... })
+        if not node.pairs:
+            return "py_dict(std::vector<std::pair<PyValue, PyValue>>{})"
+
+        items_code_parts = []
+        for pair in node.pairs:
+            key_code = self._expr(pair.key)
+            value_code = self._expr(pair.value)
+            items_code_parts.append(f"std::make_pair({key_code}, {value_code})")
+
+        items_code = ", ".join(items_code_parts)
+        return "py_dict(std::vector<std::pair<PyValue, PyValue>>{ " + items_code + " })"
+
+    def _expr_index(self, node: Index) -> str:
+        # value[index] -> py_getitem(value, index)
+        container_code = self._expr(node.value)
+        index_code = self._expr(node.index)
+        return f"py_getitem({container_code}, {index_code})"
