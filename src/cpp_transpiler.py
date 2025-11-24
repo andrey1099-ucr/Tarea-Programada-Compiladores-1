@@ -25,7 +25,7 @@ from src.ast_nodes import (
     DictLiteral,
     KeyValue,
     Index,
-    Attribute,  # <-- NUEVO: para obj.method(...)
+    Attribute,
     Node,
 )
 
@@ -344,7 +344,7 @@ class CppTranspiler:
         # Evaluate iterable expression once.
         self._emit(f"PyValue __iter = {iter_code};")
 
-        # Only lists and tuples are supported here.
+        # Simple runtime check: only lists and tuples are supported here.
         self._emit(
             "if (__iter.type != PyValue::LIST && __iter.type != PyValue::TUPLE) { "
             'throw std::runtime_error("TypeError: can only iterate over list or tuple in for-loop"); '
@@ -485,49 +485,7 @@ class CppTranspiler:
         raise NotImplementedError(f"Unsupported unary op: {node.op}")
 
     def _expr_call(self, node: Call) -> str:
-        # ----- Method calls: obj.method(...) -----
-        if isinstance(node.func, Attribute):
-            base_code = self._expr(node.func.value)
-            method = node.func.attr.id
-            arg_codes = [self._expr(a) for a in node.args]
-
-            # list methods
-            if method == "append":
-                if len(arg_codes) != 1:
-                    raise NotImplementedError("append() expects exactly 1 argument")
-                return f"py_list_append({base_code}, {arg_codes[0]})"
-
-            if method == "sublist":
-                if len(arg_codes) != 2:
-                    raise NotImplementedError("sublist() expects start and end")
-                return f"py_list_sublist({base_code}, {arg_codes[0]}, {arg_codes[1]})"
-
-            # dict / set methods: add, get, remove
-            if method == "add":
-                if len(arg_codes) == 1:
-                    # set.add(value)
-                    return f"py_dict_or_set_add({base_code}, {arg_codes[0]})"
-                if len(arg_codes) == 2:
-                    # dict.add(key, value)
-                    return (
-                        f"py_dict_or_set_add({base_code}, "
-                        f"{arg_codes[0]}, {arg_codes[1]})"
-                    )
-                raise NotImplementedError("add() expects 1 or 2 arguments")
-
-            if method == "get":
-                if len(arg_codes) != 1:
-                    raise NotImplementedError("get() expects 1 argument")
-                return f"py_dict_or_set_get({base_code}, {arg_codes[0]})"
-
-            if method == "remove":
-                if len(arg_codes) != 1:
-                    raise NotImplementedError("remove() expects 1 argument")
-                return f"py_container_remove({base_code}, {arg_codes[0]})"
-
-            raise NotImplementedError(f"Unsupported method call: .{method}()")
-
-        # ----- Free functions: foo(...) -----
+        # Builtin or user-defined function calls: foo(...)
         if isinstance(node.func, Name):
             func_name = node.func.id
 
@@ -552,7 +510,9 @@ class CppTranspiler:
             # Builtin: set(x) -> py_set_from_list(x)
             if func_name == "set":
                 if len(node.args) != 1:
-                    raise NotImplementedError("set() expects exactly 1 argument")
+                    raise NotImplementedError(
+                        "set() with != 1 argument is not supported"
+                    )
                 arg_code = self._expr(node.args[0])
                 return f"py_set_from_list({arg_code})"
 
@@ -560,8 +520,57 @@ class CppTranspiler:
             args_code = ", ".join(self._expr(a) for a in node.args)
             return f"{func_name}({args_code})"
 
+        # Container methods: obj.method(...)
+        if isinstance(node.func, Attribute):
+            # For simplicity, only support methods on simple variables like "a.append(x)"
+            if not isinstance(node.func.value, Name):
+                raise NotImplementedError(
+                    "Container methods are only supported on simple variables"
+                )
+
+            obj_name = node.func.value.id
+            method_name = node.func.attr.id
+            args = [self._expr(a) for a in node.args]
+
+            # list.append(x)
+            if method_name == "append":
+                if len(args) != 1:
+                    raise NotImplementedError("append() expects exactly 1 argument")
+                return f"py_list_append({obj_name}, {args[0]})"
+
+            # list.sublist(start, end)
+            if method_name == "sublist":
+                if len(args) != 2:
+                    raise NotImplementedError("sublist() expects exactly 2 arguments")
+                return f"py_list_sublist({obj_name}, {args[0]}, {args[1]})"
+
+            # dict.add(key, value) or set.add(value)
+            if method_name == "add":
+                if len(args) == 1:
+                    # set.add(value)
+                    return f"py_dict_or_set_add({obj_name}, {args[0]})"
+                elif len(args) == 2:
+                    # dict.add(key, value)
+                    return f"py_dict_or_set_add({obj_name}, {args[0]}, {args[1]})"
+                else:
+                    raise NotImplementedError("add() expects 1 or 2 arguments")
+
+            # dict.get(key) or set.get(value)
+            if method_name == "get":
+                if len(args) != 1:
+                    raise NotImplementedError("get() expects exactly 1 argument")
+                return f"py_dict_or_set_get({obj_name}, {args[0]})"
+
+            # list.remove(i), dict.remove(k), set.remove(v)
+            if method_name == "remove":
+                if len(args) != 1:
+                    raise NotImplementedError("remove() expects exactly 1 argument")
+                return f"py_container_remove({obj_name}, {args[0]})"
+
+            raise NotImplementedError(f"Unsupported container method: {method_name}")
+
         raise NotImplementedError(
-            "Only simple function or supported method calls are implemented"
+            "Only simple function calls and basic container methods are supported for now"
         )
 
     def _expr_list_literal(self, node: ListLiteral) -> str:
