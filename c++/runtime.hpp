@@ -11,9 +11,10 @@
 // Forward declaration
 struct PyValue;
 
-using PyList = std::vector<PyValue>;
-using PyDict = std::map<std::string, PyValue>;
+using PyList  = std::vector<PyValue>;
+using PyDict  = std::map<std::string, PyValue>;
 using PyTuple = std::vector<PyValue>;
+using PySet   = std::unordered_map<std::string, PyValue>;
 
 struct PyValue {
     enum Type {
@@ -24,18 +25,20 @@ struct PyValue {
         STRING,
         LIST,
         DICT,
-        TUPLE
+        TUPLE,
+        SET
     };
 
     Type type;
 
-    long long int_value;
-    double float_value;
-    bool bool_value;
-    std::string string_value;
-    PyList list_value;
-    PyDict dict_value;
-    PyTuple tuple_value;
+    long long     int_value;
+    double        float_value;
+    bool          bool_value;
+    std::string   string_value;
+    PyList        list_value;
+    PyDict        dict_value;
+    PyTuple       tuple_value;
+    PySet         set_value;
 
     // ----- Constructors -----
 
@@ -97,6 +100,8 @@ struct PyValue {
           bool_value(false),
           dict_value(dict) {}
 
+    // We build TUPLE and SET via helper functions (py_tuple, py_set_from_list).
+
     // ----- Helpers -----
 
     std::string type_name() const {
@@ -109,6 +114,7 @@ struct PyValue {
             case LIST:   return "list";
             case DICT:   return "dict";
             case TUPLE:  return "tuple";
+            case SET:    return "set";
             default:     return "unknown";
         }
     }
@@ -131,6 +137,8 @@ struct PyValue {
                 return !dict_value.empty();
             case TUPLE:
                 return !tuple_value.empty();
+            case SET:
+                return !set_value.empty();
             default:
                 return false;
         }
@@ -187,10 +195,24 @@ struct PyValue {
                     }
                     oss << tuple_value[i].to_string();
                 }
+                // Single-element tuple: add trailing comma
                 if (tuple_value.size() == 1) {
                     oss << ",";
                 }
                 oss << ")";
+                break;
+            }
+            case SET: {
+                oss << "{";
+                bool first = true;
+                for (const auto& kv : set_value) {
+                    if (!first) {
+                        oss << ", ";
+                    }
+                    first = false;
+                    oss << kv.second.to_string();
+                }
+                oss << "}";
                 break;
             }
         }
@@ -259,7 +281,8 @@ inline PyValue py_add(const PyValue& a, const PyValue& b) {
 
     throw std::runtime_error(
         "TypeError: unsupported operand types for +: '" +
-        a.type_name() + "' and '" + b.type_name() + "'");
+        a.type_name() + "' and '" + b.type_name() + "'"
+    );
 }
 
 // a - b
@@ -279,7 +302,8 @@ inline PyValue py_sub(const PyValue& a, const PyValue& b) {
 
     throw std::runtime_error(
         "TypeError: unsupported operand types for -: '" +
-        a.type_name() + "' and '" + b.type_name() + "'");
+        a.type_name() + "' and '" + b.type_name() + "'"
+    );
 }
 
 // a * b
@@ -299,7 +323,8 @@ inline PyValue py_mul(const PyValue& a, const PyValue& b) {
 
     throw std::runtime_error(
         "TypeError: unsupported operand types for *: '" +
-        a.type_name() + "' and '" + b.type_name() + "'");
+        a.type_name() + "' and '" + b.type_name() + "'"
+    );
 }
 
 // a / b
@@ -340,7 +365,7 @@ inline PyValue py_eq(const PyValue& a, const PyValue& b) {
             case PyValue::STRING:
                 return PyValue(a.string_value == b.string_value);
             default:
-                // For LIST/DICT/TUPLE we skip deep compare for now.
+                // For LIST/DICT/TUPLE/SET we skip deep compare for now.
                 return PyValue(false);
         }
     }
@@ -394,6 +419,7 @@ inline PyValue py_not(const PyValue& v) {
 }
 
 inline PyValue py_and(const PyValue& a, const PyValue& b) {
+    // Return first falsy or second
     if (!a.is_truthy()) {
         return a;
     }
@@ -401,6 +427,7 @@ inline PyValue py_and(const PyValue& a, const PyValue& b) {
 }
 
 inline PyValue py_or(const PyValue& a, const PyValue& b) {
+    // Return first truthy or second
     if (a.is_truthy()) {
         return a;
     }
@@ -424,6 +451,8 @@ inline PyValue py_len(const PyValue& v) {
             return PyValue(static_cast<long long>(v.dict_value.size()));
         case PyValue::TUPLE:
             return PyValue(static_cast<long long>(v.tuple_value.size()));
+        case PyValue::SET:
+            return PyValue(static_cast<long long>(v.set_value.size()));
         default:
             throw std::runtime_error(
                 "TypeError: object of type '" + v.type_name() + "' has no len()"
@@ -432,20 +461,20 @@ inline PyValue py_len(const PyValue& v) {
 }
 
 
-// ====================== Containers: list, dict, tuple helpers ======================
+// ====================== Containers: list, dict, tuple, set ======================
 
+// Build a list from items.
 inline PyValue py_list(const std::vector<PyValue>& items) {
     return PyValue(items);
 }
 
+// Build a dict from (key, value) pairs; keys use to_string().
 inline PyValue py_dict(const std::vector<std::pair<PyValue, PyValue>>& items) {
     PyDict dict;
 
     for (const auto& kv : items) {
         const PyValue& k = kv.first;
         const PyValue& v = kv.second;
-
-        // For simplicity, use the string representation of the key.
         std::string key_str = k.to_string();
         dict[key_str] = v;
     }
@@ -453,15 +482,46 @@ inline PyValue py_dict(const std::vector<std::pair<PyValue, PyValue>>& items) {
     return PyValue(dict);
 }
 
+// Build a tuple from items.
 inline PyValue py_tuple(const std::vector<PyValue>& items) {
     PyValue v;
-    v.type = PyValue::TUPLE;
-    v.int_value = 0;
+    v.type        = PyValue::TUPLE;
+    v.int_value   = 0;
     v.float_value = 0.0;
-    v.bool_value = false;
+    v.bool_value  = false;
     v.tuple_value = items;
     return v;
 }
+
+// Build a set from a list/tuple (used for set(...) builtin).
+inline PyValue py_set_from_list(const PyValue& iterable) {
+    if (iterable.type != PyValue::LIST && iterable.type != PyValue::TUPLE) {
+        throw std::runtime_error(
+            "TypeError: set() expects a list or tuple"
+        );
+    }
+
+    PyValue v;
+    v.type        = PyValue::SET;
+    v.int_value   = 0;
+    v.float_value = 0.0;
+    v.bool_value  = false;
+
+    if (iterable.type == PyValue::LIST) {
+        for (const auto& item : iterable.list_value) {
+            std::string key_str = item.to_string();
+            v.set_value[key_str] = item;
+        }
+    } else { // TUPLE
+        for (const auto& item : iterable.tuple_value) {
+            std::string key_str = item.to_string();
+            v.set_value[key_str] = item;
+        }
+    }
+
+    return v;
+}
+
 
 // Implements Python-like indexing: value[index].
 inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
@@ -519,8 +579,141 @@ inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
         return it->second;
     }
 
+    // set is not subscriptable
+    if (container.type == PyValue::SET) {
+        throw std::runtime_error(
+            "TypeError: 'set' object is not subscriptable"
+        );
+    }
+
     // Not subscriptable
     throw std::runtime_error(
         "TypeError: object of type '" + container.type_name() + "' is not subscriptable"
     );
+}
+
+
+// ====================== List helpers (methods) ======================
+
+// list.append(x) -> mutates list, returns None.
+inline PyValue py_list_append(PyValue& list, const PyValue& item) {
+    if (list.type != PyValue::LIST) {
+        throw std::runtime_error("TypeError: append() only valid on list");
+    }
+    list.list_value.push_back(item);
+    return PyValue();  // None
+}
+
+// list.sublist(start, end) -> returns new list with slice [start, end).
+inline PyValue py_list_sublist(const PyValue& list,
+                               const PyValue& start,
+                               const PyValue& end) {
+    if (list.type != PyValue::LIST) {
+        throw std::runtime_error("TypeError: sublist() only valid on list");
+    }
+    if (start.type != PyValue::INT || end.type != PyValue::INT) {
+        throw std::runtime_error("TypeError: sublist indices must be integers");
+    }
+
+    long long s = start.int_value;
+    long long e = end.int_value;
+    if (s < 0) s = 0;
+    if (e < s) e = s;
+
+    PyList result;
+    for (long long i = s; i < e && i < (long long)list.list_value.size(); ++i) {
+        result.push_back(list.list_value[(std::size_t)i]);
+    }
+    return PyValue(result);
+}
+
+
+// ====================== Dict / Set helpers (methods) ======================
+
+// dict.add(key, value) or set.add(value)
+// Mutates container, returns None.
+inline PyValue py_dict_or_set_add(PyValue& container,
+                                  const PyValue& key_or_value) {
+    // Used for set.add(value)
+    if (container.type != PyValue::SET) {
+        throw std::runtime_error("TypeError: single-arg add() only valid on set");
+    }
+
+    std::string key_str = key_or_value.to_string();
+    container.set_value[key_str] = key_or_value;
+    return PyValue();  // None
+}
+
+inline PyValue py_dict_or_set_add(PyValue& container,
+                                  const PyValue& key,
+                                  const PyValue& value) {
+    // Used for dict.add(key, value)
+    if (container.type != PyValue::DICT) {
+        throw std::runtime_error("TypeError: two-arg add() only valid on dict");
+    }
+
+    std::string key_str = key.to_string();
+    container.dict_value[key_str] = value;
+    return PyValue();  // None
+}
+
+// dict.get(key) -> value or None (if not found)
+// set.get(value) -> True/False (membership)
+inline PyValue py_dict_or_set_get(const PyValue& container,
+                                  const PyValue& key_or_value) {
+    if (container.type == PyValue::DICT) {
+        std::string key_str = key_or_value.to_string();
+        auto it = container.dict_value.find(key_str);
+        if (it == container.dict_value.end()) {
+            // Python's dict.get() returns None if missing.
+            return PyValue();
+        }
+        return it->second;
+    }
+
+    if (container.type == PyValue::SET) {
+        std::string key_str = key_or_value.to_string();
+        auto it = container.set_value.find(key_str);
+        return PyValue(it != container.set_value.end());
+    }
+
+    throw std::runtime_error("TypeError: get() only valid on dict or set");
+}
+
+// remove(...) for list, dict, set (mutates, returns None).
+inline PyValue py_container_remove(PyValue& container,
+                                   const PyValue& key_or_index) {
+    if (container.type == PyValue::LIST) {
+        if (key_or_index.type != PyValue::INT) {
+            throw std::runtime_error("TypeError: list remove() index must be int");
+        }
+        long long idx = key_or_index.int_value;
+        if (idx < 0 || idx >= (long long)container.list_value.size()) {
+            throw std::runtime_error("IndexError: list index out of range in remove()");
+        }
+        container.list_value.erase(container.list_value.begin() + (std::size_t)idx);
+        return PyValue();
+    }
+
+    if (container.type == PyValue::DICT) {
+        std::string key_str = key_or_index.to_string();
+        auto it = container.dict_value.find(key_str);
+        if (it == container.dict_value.end()) {
+            throw std::runtime_error("KeyError: key not found in dict remove()");
+        }
+        container.dict_value.erase(it);
+        return PyValue();
+    }
+
+    if (container.type == PyValue::SET) {
+        std::string key_str = key_or_index.to_string();
+        auto it = container.set_value.find(key_str);
+        if (it == container.set_value.end()) {
+            throw std::runtime_error("KeyError: value not found in set remove()");
+        }
+        container.set_value.erase(it);
+        return PyValue();
+    }
+
+    throw std::runtime_error("TypeError: remove() only valid on list, dict or set");
 }

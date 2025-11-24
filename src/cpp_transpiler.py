@@ -25,6 +25,7 @@ from src.ast_nodes import (
     DictLiteral,
     KeyValue,
     Index,
+    Attribute,  # <-- NUEVO: para obj.method(...)
     Node,
 )
 
@@ -343,7 +344,7 @@ class CppTranspiler:
         # Evaluate iterable expression once.
         self._emit(f"PyValue __iter = {iter_code};")
 
-        # Simple runtime check: only lists and tuples are supported here.
+        # Only lists and tuples are supported here.
         self._emit(
             "if (__iter.type != PyValue::LIST && __iter.type != PyValue::TUPLE) { "
             'throw std::runtime_error("TypeError: can only iterate over list or tuple in for-loop"); '
@@ -484,7 +485,49 @@ class CppTranspiler:
         raise NotImplementedError(f"Unsupported unary op: {node.op}")
 
     def _expr_call(self, node: Call) -> str:
-        # Only support calls to simple names: foo(...)
+        # ----- Method calls: obj.method(...) -----
+        if isinstance(node.func, Attribute):
+            base_code = self._expr(node.func.value)
+            method = node.func.attr.id
+            arg_codes = [self._expr(a) for a in node.args]
+
+            # list methods
+            if method == "append":
+                if len(arg_codes) != 1:
+                    raise NotImplementedError("append() expects exactly 1 argument")
+                return f"py_list_append({base_code}, {arg_codes[0]})"
+
+            if method == "sublist":
+                if len(arg_codes) != 2:
+                    raise NotImplementedError("sublist() expects start and end")
+                return f"py_list_sublist({base_code}, {arg_codes[0]}, {arg_codes[1]})"
+
+            # dict / set methods: add, get, remove
+            if method == "add":
+                if len(arg_codes) == 1:
+                    # set.add(value)
+                    return f"py_dict_or_set_add({base_code}, {arg_codes[0]})"
+                if len(arg_codes) == 2:
+                    # dict.add(key, value)
+                    return (
+                        f"py_dict_or_set_add({base_code}, "
+                        f"{arg_codes[0]}, {arg_codes[1]})"
+                    )
+                raise NotImplementedError("add() expects 1 or 2 arguments")
+
+            if method == "get":
+                if len(arg_codes) != 1:
+                    raise NotImplementedError("get() expects 1 argument")
+                return f"py_dict_or_set_get({base_code}, {arg_codes[0]})"
+
+            if method == "remove":
+                if len(arg_codes) != 1:
+                    raise NotImplementedError("remove() expects 1 argument")
+                return f"py_container_remove({base_code}, {arg_codes[0]})"
+
+            raise NotImplementedError(f"Unsupported method call: .{method}()")
+
+        # ----- Free functions: foo(...) -----
         if isinstance(node.func, Name):
             func_name = node.func.id
 
@@ -506,11 +549,20 @@ class CppTranspiler:
                 arg_code = self._expr(node.args[0])
                 return f"py_len({arg_code})"
 
+            # Builtin: set(x) -> py_set_from_list(x)
+            if func_name == "set":
+                if len(node.args) != 1:
+                    raise NotImplementedError("set() expects exactly 1 argument")
+                arg_code = self._expr(node.args[0])
+                return f"py_set_from_list({arg_code})"
+
             # Regular function call: foo(a, b, ...)
             args_code = ", ".join(self._expr(a) for a in node.args)
             return f"{func_name}({args_code})"
 
-        raise NotImplementedError("Only simple function calls are supported for now")
+        raise NotImplementedError(
+            "Only simple function or supported method calls are implemented"
+        )
 
     def _expr_list_literal(self, node: ListLiteral) -> str:
         # py_list(std::vector<PyValue>{ elem1, elem2, ... })
