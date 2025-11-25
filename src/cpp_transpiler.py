@@ -67,7 +67,7 @@ class CppTranspiler:
         self._emit('#include "../../c++/runtime.hpp"')
         self._emit("")
         self._emit("// Compile with something like:")
-        self._emit("//   g++ -std=c++17 output.cpp -o program")
+        self._emit("//   g++ -std=c++17 -O3 output.cpp -o program")
         self._emit("")
 
     def _emit_program(self, program: Program) -> None:
@@ -88,67 +88,144 @@ class CppTranspiler:
         # Then emit main() with all global-level statements
         self._emit_main(globals)
 
-    # ---------- assignment collection for Python-like scopes ----------
+    # ---------- analysis helpers for assignments / mutations ----------
+
+    def _collect_mutated_names_in_expr(self, node: Node) -> Set[str]:
+        mutated: Set[str] = set()
+
+        if isinstance(node, Call):
+            # Container methods: obj.method(...)
+            if isinstance(node.func, Attribute) and isinstance(node.func.value, Name):
+                method_name = node.func.attr.id
+                obj_name = node.func.value.id
+
+                if method_name in ("append", "add", "remove"):
+                    mutated.add(obj_name)
+
+            # Recurse into arguments
+            for arg in node.args:
+                mutated |= self._collect_mutated_names_in_expr(arg)
+
+        elif isinstance(node, BinaryOp):
+            mutated |= self._collect_mutated_names_in_expr(node.left)
+            mutated |= self._collect_mutated_names_in_expr(node.right)
+
+        elif isinstance(node, UnaryOp):
+            mutated |= self._collect_mutated_names_in_expr(node.operand)
+
+        elif isinstance(node, ListLiteral):
+            for e in node.elements:
+                mutated |= self._collect_mutated_names_in_expr(e)
+
+        elif isinstance(node, TupleLiteral):
+            for e in node.elements:
+                mutated |= self._collect_mutated_names_in_expr(e)
+
+        elif isinstance(node, DictLiteral):
+            for pair in node.pairs:
+                mutated |= self._collect_mutated_names_in_expr(pair.key)
+                mutated |= self._collect_mutated_names_in_expr(pair.value)
+
+        elif isinstance(node, Index):
+            mutated |= self._collect_mutated_names_in_expr(node.value)
+            mutated |= self._collect_mutated_names_in_expr(node.index)
+
+        # Name, Constant, etc. do not add anything here.
+        return mutated
 
     def _collect_assigned_names_in_stmts(self, stmts: List[Node]) -> Set[str]:
-        """
-        Traverse a list of statements and return the set of variable names
-        that appear as assignment targets (Name nodes).
-
-        This includes assignments inside if / elif / else / while / for blocks.
-        """
         names: Set[str] = set()
 
         for stmt in stmts:
+            # Simple / indexed assignments
             if isinstance(stmt, Assign):
+                # x = expr
                 if isinstance(stmt.target, Name):
                     names.add(stmt.target.id)
+                # a[i] = expr  -> treat 'a' as mutated
+                elif isinstance(stmt.target, Index) and isinstance(
+                    stmt.target.value, Name
+                ):
+                    names.add(stmt.target.value.id)
 
+                # Look for mutations in RHS expression as well
+                names |= self._collect_mutated_names_in_expr(stmt.value)
+
+            # Return: may contain calls that mutate containers
+            elif isinstance(stmt, Return) and stmt.value is not None:
+                names |= self._collect_mutated_names_in_expr(stmt.value)
+
+            # if / elif / else
             elif isinstance(stmt, If):
-                # if body
+                names |= self._collect_mutated_names_in_expr(stmt.condition)
                 names |= self._collect_assigned_names_in_stmts(stmt.body)
-                # elif clauses
+
                 for elif_clause in stmt.elifs:
+                    names |= self._collect_mutated_names_in_expr(elif_clause.condition)
                     names |= self._collect_assigned_names_in_stmts(elif_clause.body)
-                # else body
+
                 if stmt.orelse:
                     names |= self._collect_assigned_names_in_stmts(stmt.orelse)
 
+            # while
             elif isinstance(stmt, While):
+                names |= self._collect_mutated_names_in_expr(stmt.condition)
                 names |= self._collect_assigned_names_in_stmts(stmt.body)
 
+            # for
             elif isinstance(stmt, For):
-                # loop variable
+                # loop variable is written each iteration
                 if isinstance(stmt.target, Name):
                     names.add(stmt.target.id)
+
+                names |= self._collect_mutated_names_in_expr(stmt.iterable)
                 names |= self._collect_assigned_names_in_stmts(stmt.body)
+
+            # Expression statement: could be a container method call
+            elif isinstance(stmt, Call):
+                names |= self._collect_mutated_names_in_expr(stmt)
+
+            # Pass / Break / Continue: nothing to do
 
         return names
 
     # ---------- functions and main ----------
 
     def _emit_function(self, func: FunctionDef) -> None:
-        # All parameters are represented as PyValue
+        # Parameter names
         param_names = [p.name.id for p in func.params]
-        params_code = ", ".join(f"PyValue {name}" for name in param_names)
 
+        # 1) Collect all names assigned or mutated inside the function body
+        assigned_or_mutated = self._collect_assigned_names_in_stmts(func.body)
+
+        # 2) Build parameter declarations:
+        #    - if a param is never assigned/mutated -> const PyValue&
+        #    - otherwise -> PyValue (by value)
+        param_decls: List[str] = []
+        for p in func.params:
+            name = p.name.id
+            if name in assigned_or_mutated:
+                param_decls.append(f"PyValue {name}")
+            else:
+                param_decls.append(f"const PyValue& {name}")
+
+        params_code = ", ".join(param_decls)
+
+        # Function header
         self._emit(f"PyValue {func.name.id}({params_code}) {{")
         self._indent()
 
-        # 1) Collect all assigned variable names inside the function body
-        assigned = self._collect_assigned_names_in_stmts(func.body)
+        # 3) Local variables are assigned/mutated names minus parameters
+        local_vars = assigned_or_mutated.difference(param_names)
 
-        # 2) Local variables are assigned names minus parameters
-        local_vars = assigned.difference(param_names)
-
-        # 3) Declare all local variables at the beginning (Python-like function scope)
+        # 4) Declare all local variables at the beginning (Python-like function scope)
         for var in sorted(local_vars):
             self._emit(f"PyValue {var};")
 
-        # 4) Set of all declared names inside this function (params + locals)
+        # 5) Set of all declared names inside this function (params + locals)
         declared: Set[str] = set(param_names) | local_vars
 
-        # 5) Emit the function body
+        # 6) Emit the function body
         for stmt in func.body:
             self._emit_stmt(stmt, declared)
 
@@ -203,11 +280,6 @@ class CppTranspiler:
             raise NotImplementedError(f"Unsupported statement: {type(node).__name__}")
 
     def _emit_assign(self, stmt: Assign, declared: Set[str]) -> None:
-        """
-        Handle:
-          - simple variable assignment:   x = expr
-          - indexed assignment:          a[i] = expr   or   d[key] = expr
-        """
         # Case 1: simple variable assignment: x = expr
         if isinstance(stmt.target, Name):
             var_name = stmt.target.id
@@ -309,13 +381,13 @@ class CppTranspiler:
 
         # Translate Python range into start, stop, step.
         if n == 1:
-            start_code = "PyValue(0)"
+            start_code = "PY_ZERO"
             stop_code = self._expr(args[0])
-            step_code = "PyValue(1)"
+            step_code = "PY_ONE"
         elif n == 2:
             start_code = self._expr(args[0])
             stop_code = self._expr(args[1])
-            step_code = "PyValue(1)"
+            step_code = "PY_ONE"
         elif n == 3:
             start_code = self._expr(args[0])
             stop_code = self._expr(args[1])
@@ -452,6 +524,13 @@ class CppTranspiler:
         if isinstance(val, bool):
             return "PyValue(true)" if val else "PyValue(false)"
         if isinstance(val, int):
+            # Reuse small integer constants
+            if val == 0:
+                return "PY_ZERO"
+            if val == 1:
+                return "PY_ONE"
+            if val == 2:
+                return "PY_TWO"
             return f"PyValue({val})"
         if isinstance(val, float):
             return f"PyValue({val})"

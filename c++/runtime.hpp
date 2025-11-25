@@ -221,6 +221,11 @@ struct PyValue {
     }
 };
 
+// Small reusable integer constants to avoid recreating PyValue(0/1/2) everywhere.
+static const PyValue PY_ZERO(0);
+static const PyValue PY_ONE(1);
+static const PyValue PY_TWO(2);
+
 
 // ====================== Printing ======================
 
