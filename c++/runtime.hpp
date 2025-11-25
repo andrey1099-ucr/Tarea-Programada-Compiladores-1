@@ -592,6 +592,42 @@ inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
     );
 }
 
+// Assign into containers: container[index] = value
+inline void py_setitem(PyValue &container, const PyValue &index, const PyValue &value) {
+    // list[index] = value
+    if (container.type == PyValue::LIST) {
+        if (index.type != PyValue::INT) {
+            throw std::runtime_error("TypeError: list indices must be integers");
+        }
+        long long i = index.int_value;
+        if (i < 0 || i >= static_cast<long long>(container.list_value.size())) {
+            throw std::runtime_error("IndexError: list assignment index out of range");
+        }
+        container.list_value[static_cast<std::size_t>(i)] = value;
+        return;
+    }
+
+    // dict[key] = value  (used also for set-like dicts if needed)
+    if (container.type == PyValue::DICT) {
+        std::string key_str =
+            (index.type == PyValue::STRING) ? index.string_value : index.to_string();
+        container.dict_value[key_str] = value;
+        return;
+    }
+
+    // Tuple assignment is not allowed (matches Python's immutability idea)
+    if (container.type == PyValue::TUPLE) {
+        throw std::runtime_error(
+            "TypeError: 'tuple' object does not support item assignment"
+        );
+    }
+
+    // Everything else is unsupported
+    throw std::runtime_error(
+        "TypeError: object of type '" + container.type_name() +
+        "' does not support item assignment"
+    );
+}
 
 // ====================== List helpers (methods) ======================
 
