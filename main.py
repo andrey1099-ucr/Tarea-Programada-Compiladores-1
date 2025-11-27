@@ -5,7 +5,7 @@ from src.Parser import Parser
 from src.cpp_transpiler import CppTranspiler
 
 # Input Fangless Python source file
-FILE = "./performance_eval/fibonacci_rec/fibonacci_rec.py"
+FILE = "./performance_eval/minus.py"
 
 
 if __name__ == "__main__":

@@ -344,12 +344,21 @@ class Parser:
 
     def p_expression_power(self, p):
         """expression_power : expression_power POWER primary
-        | primary"""
+                            | MINUS expression_power
+                            | primary"""
         if len(p) == 2:
+            # Primary
             p[0] = p[1]
+
+        elif len(p) == 3 and p.slice[1].type == "MINUS":
+            # MINUS expression_power
+            p[0] = UnaryOp(op="NEG", operand=p[2])
+
         else:
+            # Expression_power POWER primary
             op = p.slice[2].type  # POWER
             p[0] = BinaryOp(op=op, left=p[1], right=p[3])
+
 
     # ---------- Primaries: calls, attributes, indexing, atoms ----------
 

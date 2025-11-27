@@ -40,7 +40,7 @@ struct PyValue {
     PyTuple       tuple_value;
     PySet         set_value;
 
-    // ----- Constructors -----
+    // Constructors
 
     PyValue()
         : type(NONE),
@@ -100,9 +100,7 @@ struct PyValue {
           bool_value(false),
           dict_value(dict) {}
 
-    // We build TUPLE and SET via helper functions (py_tuple, py_set_from_list).
-
-    // ----- Helpers -----
+    // Helpers 
 
     std::string type_name() const {
         switch (type) {
@@ -195,7 +193,7 @@ struct PyValue {
                     }
                     oss << tuple_value[i].to_string();
                 }
-                // Single-element tuple: add trailing comma
+                // Single element tuple, add trailing comma
                 if (tuple_value.size() == 1) {
                     oss << ",";
                 }
@@ -226,8 +224,7 @@ static const PyValue PY_ZERO(0);
 static const PyValue PY_ONE(1);
 static const PyValue PY_TWO(2);
 
-
-// ====================== Printing ======================
+// Printing
 
 inline void py_print(const PyValue& v) {
     std::cout << v.to_string() << std::endl;
@@ -243,8 +240,7 @@ inline void py_print_many(const std::vector<PyValue>& args) {
     std::cout << std::endl;
 }
 
-
-// ====================== Arithmetic helpers ======================
+// Arithmetic helpers
 
 inline double as_double_for_arith(const PyValue& v) {
     if (v.type == PyValue::INT) {
@@ -263,15 +259,14 @@ inline long long as_int_for_mod(const PyValue& v) {
     throw std::runtime_error("TypeError: expected int for modulus, got " + v.type_name());
 }
 
-
 // a + b
 inline PyValue py_add(const PyValue& a, const PyValue& b) {
-    // int + int -> int
+    // int + int = int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value + b.int_value);
     }
 
-    // numeric (int/float) + numeric (int/float) -> float
+    // numeric (int/float) + numeric (int/float) = float
     if ((a.type == PyValue::INT || a.type == PyValue::FLOAT) &&
         (b.type == PyValue::INT || b.type == PyValue::FLOAT)) {
         double da = as_double_for_arith(a);
@@ -279,7 +274,7 @@ inline PyValue py_add(const PyValue& a, const PyValue& b) {
         return PyValue(da + db);
     }
 
-    // str + str -> str
+    // str + str = str
     if (a.type == PyValue::STRING && b.type == PyValue::STRING) {
         return PyValue(a.string_value + b.string_value);
     }
@@ -292,12 +287,12 @@ inline PyValue py_add(const PyValue& a, const PyValue& b) {
 
 // a - b
 inline PyValue py_sub(const PyValue& a, const PyValue& b) {
-    // int - int -> int
+    // int - int = int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value - b.int_value);
     }
 
-    // numeric -> float
+    // numeric = float
     if ((a.type == PyValue::INT || a.type == PyValue::FLOAT) &&
         (b.type == PyValue::INT || b.type == PyValue::FLOAT)) {
         double da = as_double_for_arith(a);
@@ -313,12 +308,12 @@ inline PyValue py_sub(const PyValue& a, const PyValue& b) {
 
 // a * b
 inline PyValue py_mul(const PyValue& a, const PyValue& b) {
-    // int * int -> int
+    // int * int = int
     if (a.type == PyValue::INT && b.type == PyValue::INT) {
         return PyValue(a.int_value * b.int_value);
     }
 
-    // numeric -> float
+    // numeric = float
     if ((a.type == PyValue::INT || a.type == PyValue::FLOAT) &&
         (b.type == PyValue::INT || b.type == PyValue::FLOAT)) {
         double da = as_double_for_arith(a);
@@ -353,14 +348,14 @@ inline PyValue py_mod(const PyValue& a, const PyValue& b) {
 }
 
 
-// ====================== Comparisons ======================
+// Comparisons
 
 inline PyValue py_eq(const PyValue& a, const PyValue& b) {
     // Same type basic comparison
     if (a.type == b.type) {
         switch (a.type) {
             case PyValue::NONE:
-                return PyValue(true);  // None == None
+                return PyValue(true);
             case PyValue::INT:
                 return PyValue(a.int_value == b.int_value);
             case PyValue::FLOAT:
@@ -370,7 +365,6 @@ inline PyValue py_eq(const PyValue& a, const PyValue& b) {
             case PyValue::STRING:
                 return PyValue(a.string_value == b.string_value);
             default:
-                // For LIST/DICT/TUPLE/SET we skip deep compare for now.
                 return PyValue(false);
         }
     }
@@ -383,7 +377,6 @@ inline PyValue py_eq(const PyValue& a, const PyValue& b) {
         return PyValue(da == db);
     }
 
-    // Different/unsupported types: treat as not equal
     return PyValue(false);
 }
 
@@ -417,7 +410,7 @@ inline PyValue py_ge(const PyValue& a, const PyValue& b) {
 }
 
 
-// ====================== Logical ops (and, or, not) ======================
+// Logical ops (and, or, not)
 
 inline PyValue py_not(const PyValue& v) {
     return PyValue(!v.is_truthy());
@@ -440,7 +433,7 @@ inline PyValue py_or(const PyValue& a, const PyValue& b) {
 }
 
 
-// ====================== Builtins: str() and len() ======================
+// Builtins str() and len()
 
 inline PyValue py_str(const PyValue& v) {
     return PyValue(v.to_string());
@@ -466,14 +459,14 @@ inline PyValue py_len(const PyValue& v) {
 }
 
 
-// ====================== Containers: list, dict, tuple, set ======================
+// Containers: list, dict, tuple, set
 
 // Build a list from items.
 inline PyValue py_list(const std::vector<PyValue>& items) {
     return PyValue(items);
 }
 
-// Build a dict from (key, value) pairs; keys use to_string().
+// Build a dict from (key, value) pairs, keys use to_string().
 inline PyValue py_dict(const std::vector<std::pair<PyValue, PyValue>>& items) {
     PyDict dict;
 
@@ -498,7 +491,7 @@ inline PyValue py_tuple(const std::vector<PyValue>& items) {
     return v;
 }
 
-// Build a set from a list/tuple (used for set(...) builtin).
+// Build a set from a list/tuple
 inline PyValue py_set_from_list(const PyValue& iterable) {
     if (iterable.type != PyValue::LIST && iterable.type != PyValue::TUPLE) {
         throw std::runtime_error(
@@ -527,8 +520,6 @@ inline PyValue py_set_from_list(const PyValue& iterable) {
     return v;
 }
 
-
-// Implements Python-like indexing: value[index].
 inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
     // list[index]
     if (container.type == PyValue::LIST) {
@@ -554,7 +545,7 @@ inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
         return container.tuple_value[static_cast<std::size_t>(i)];
     }
 
-    // string[index]  -> a 1-character string
+    // string[index] = a 1-character string
     if (container.type == PyValue::STRING) {
         if (index.type != PyValue::INT) {
             throw std::runtime_error("TypeError: string indices must be integers");
@@ -597,7 +588,7 @@ inline PyValue py_getitem(const PyValue& container, const PyValue& index) {
     );
 }
 
-// Assign into containers: container[index] = value
+// Assign into containers container[index] = value
 inline void py_setitem(PyValue &container, const PyValue &index, const PyValue &value) {
     // list[index] = value
     if (container.type == PyValue::LIST) {
@@ -612,7 +603,7 @@ inline void py_setitem(PyValue &container, const PyValue &index, const PyValue &
         return;
     }
 
-    // dict[key] = value  (used also for set-like dicts if needed)
+    // dict[key] = value
     if (container.type == PyValue::DICT) {
         std::string key_str =
             (index.type == PyValue::STRING) ? index.string_value : index.to_string();
@@ -620,23 +611,22 @@ inline void py_setitem(PyValue &container, const PyValue &index, const PyValue &
         return;
     }
 
-    // Tuple assignment is not allowed (matches Python's immutability idea)
+    // Tuple assignment is not allowed
     if (container.type == PyValue::TUPLE) {
         throw std::runtime_error(
             "TypeError: 'tuple' object does not support item assignment"
         );
     }
 
-    // Everything else is unsupported
     throw std::runtime_error(
         "TypeError: object of type '" + container.type_name() +
         "' does not support item assignment"
     );
 }
 
-// ====================== List helpers (methods) ======================
+// List helpers (methods)
 
-// list.append(x) -> mutates list, returns None.
+// list.append(x) = mutates list, returns None.
 inline PyValue py_list_append(PyValue& list, const PyValue& item) {
     if (list.type != PyValue::LIST) {
         throw std::runtime_error("TypeError: append() only valid on list");
@@ -645,7 +635,7 @@ inline PyValue py_list_append(PyValue& list, const PyValue& item) {
     return PyValue();  // None
 }
 
-// list.sublist(start, end) -> returns new list with slice [start, end).
+// list.sublist(start, end) = returns new list with slice [start, end).
 inline PyValue py_list_sublist(const PyValue& list,
                                const PyValue& start,
                                const PyValue& end) {
@@ -669,10 +659,9 @@ inline PyValue py_list_sublist(const PyValue& list,
 }
 
 
-// ====================== Dict / Set helpers (methods) ======================
+// Dict / Set helpers (methods)
 
 // dict.add(key, value) or set.add(value)
-// Mutates container, returns None.
 inline PyValue py_dict_or_set_add(PyValue& container,
                                   const PyValue& key_or_value) {
     // Used for set.add(value)
@@ -698,8 +687,8 @@ inline PyValue py_dict_or_set_add(PyValue& container,
     return PyValue();  // None
 }
 
-// dict.get(key) -> value or None (if not found)
-// set.get(value) -> True/False (membership)
+// dict.get(key) = value or None
+// set.get(value) = True/False
 inline PyValue py_dict_or_set_get(const PyValue& container,
                                   const PyValue& key_or_value) {
     if (container.type == PyValue::DICT) {
@@ -721,7 +710,7 @@ inline PyValue py_dict_or_set_get(const PyValue& container,
     throw std::runtime_error("TypeError: get() only valid on dict or set");
 }
 
-// remove(...) for list, dict, set (mutates, returns None).
+// remove for list, dict, set.
 inline PyValue py_container_remove(PyValue& container,
                                    const PyValue& key_or_index) {
     if (container.type == PyValue::LIST) {

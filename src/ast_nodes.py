@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Any
 
 
+# Base class:
 class Node:
     """Base AST node."""
 
@@ -12,62 +13,55 @@ class Node:
         print(self)
 
 
-# ---------- Basic value/identifier nodes ----------
-
+# Basic identifiers:
 
 @dataclass
 class Program(Node):
     body: List[Node] = field(default_factory=list)
 
-
 @dataclass
 class Name(Node):
     id: str
-
 
 @dataclass
 class Constant(Node):
     value: Any
 
 
-# ---------- Parameters, functions, classes ----------
-
-
+# Parameters:
 @dataclass
 class Param(Node):
-    """Function parameter. If default is None, it is required."""
-
     name: Name
     default: Optional[Node] = None
 
 
+# All assign types:
 @dataclass
 class Assign(Node):
     target: Node
-    op: str  # '=', 'PLUS_EQUAL', etc.
+    op: str  # =, +=...
     value: Node
 
+
+# Reserved words:
 
 @dataclass
 class Return(Node):
     value: Optional[Node] = None
 
-
 @dataclass
 class Pass(Node):
     pass
-
 
 @dataclass
 class Break(Node):
     pass
 
-
 @dataclass
 class Continue(Node):
     pass
 
-
+# If clause:
 @dataclass
 class If(Node):
     condition: Node
@@ -75,18 +69,18 @@ class If(Node):
     elifs: List["ElifClause"] = field(default_factory=list)
     orelse: List[Node] = field(default_factory=list)
 
-
 @dataclass
 class ElifClause(Node):
     condition: Node
     body: List[Node] = field(default_factory=list)
 
 
+# Loops:
+
 @dataclass
 class While(Node):
     condition: Node
     body: List[Node] = field(default_factory=list)
-
 
 @dataclass
 class For(Node):
@@ -95,14 +89,13 @@ class For(Node):
     body: List[Node] = field(default_factory=list)
 
 
-@dataclass
-class ClassDef(Node):
-    """Python-like class definition with optional inheritance."""
+# Definitions:
 
+@dataclass
+class ClassDef(Node): # Not used
     name: Name
     bases: List[Name] = field(default_factory=list)
     body: List[Node] = field(default_factory=list)
-
 
 @dataclass
 class FunctionDef(Node):
@@ -111,21 +104,18 @@ class FunctionDef(Node):
     body: List[Node] = field(default_factory=list)
 
 
-# ---------- Expressions ----------
-
+# Expressions:
 
 @dataclass
 class BinaryOp(Node):
-    op: str  # 'ADD', 'MINUS', 'EQUAL_EQUAL', 'OR', etc.
+    op: str  # +, -, ==, or...
     left: Node
     right: Node
 
-
 @dataclass
 class UnaryOp(Node):
-    op: str  # 'NOT', unary minus, etc.
+    op: str  # NOT, unary minus...
     operand: Node
-
 
 @dataclass
 class Call(Node):
@@ -140,28 +130,24 @@ class Attribute(Node):
 
 
 @dataclass
-class Index(Node):
-    """Represents value[index], e.g. a[0] or a[i]."""
-
+class Index(Node): # value[index]
     value: Node
     index: Node
 
-
 @dataclass
-class ListLiteral(Node):
+class ListLiteral(Node): # [1, 2, 3]
     elements: List[Node] = field(default_factory=list)
 
 
 @dataclass
-class TupleLiteral(Node):
+class TupleLiteral(Node): # (1, 2, 3)
     elements: List[Node] = field(default_factory=list)
 
 
 @dataclass
-class KeyValue(Node):
+class KeyValue(Node): # "key1" : "FrontDoor"
     key: Node
     value: Node
-
 
 @dataclass
 class DictLiteral(Node):
